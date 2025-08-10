@@ -365,14 +365,17 @@ def score_change_cross_section(df, cols=None, only_last_date=False, last_n=5):
 
     # Add YTD and daily change columns
     if not df_changed.empty:
-        # YTD change: compare last price to price at first date of current year
+        # YTD change: compare last price to price at first available date of current year
         try:
             df_changed['YTD_change'] = np.nan
             for ticker in df_changed.index.get_level_values('ticker'):
                 ticker_df = df.xs(ticker, level='ticker')
-                year_start = dt.date(df.index.get_level_values('date').max().year, 1, 1)
-                if year_start in ticker_df.index.get_level_values('date'):
-                    start_price = ticker_df.xs(year_start, level='date')['adj close']
+                current_year = df.index.get_level_values('date').max().year
+                ticker_dates = ticker_df.index.get_level_values('date')
+                ytd_dates = [d for d in ticker_dates if d.year == current_year]
+                if ytd_dates:
+                    first_ytd_date = min(ytd_dates)
+                    start_price = ticker_df.xs(first_ytd_date, level='date')['adj close']
                     last_price = ticker_df.iloc[-1]['adj close']
                     ytd_change = (last_price - start_price) / start_price if start_price != 0 else np.nan
                     df_changed.loc[ticker, 'YTD_change'] = ytd_change
@@ -446,9 +449,12 @@ def target_score_cross_section(df, cols=None, only_last_date=False, target=3, al
             base['YTD_change'] = np.nan
             for ticker in base.index:
                 ticker_df = df.xs(ticker, level='ticker')
-                year_start = dt.date(df.index.get_level_values('date').max().year, 1, 1)
-                if year_start in ticker_df.index.get_level_values('date'):
-                    start_price = ticker_df.xs(year_start, level='date')['adj close']
+                current_year = df.index.get_level_values('date').max().year
+                ticker_dates = ticker_df.index.get_level_values('date')
+                ytd_dates = [d for d in ticker_dates if d.year == current_year]
+                if ytd_dates:
+                    first_ytd_date = min(ytd_dates)
+                    start_price = ticker_df.xs(first_ytd_date, level='date')['adj close']
                     last_price = ticker_df.iloc[-1]['adj close']
                     ytd_change = (last_price - start_price) / start_price if start_price != 0 else np.nan
                     base.loc[ticker, 'YTD_change'] = ytd_change
@@ -833,34 +839,9 @@ if st.button("🚀 Run Analysis", type="primary"):
             st.error(f"Error processing indicators: {str(e)}")
             st.stop()
 
-    # Now render tables (all use df_with_indicators)
-    # Stocks Meeting Target Score Table (now appears first)
-    st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
-    try:
-        result_tar_sc = target_score_cross_section(
-            df_with_indicators,
-            cols=target_score_cols,
-            only_last_date=True,
-            target=target_score,
-            allow_ge=True,
-            last_n=score_history_days
-        )
-        if use_weekly_analysis and 'df_with_indicatorsw' in locals():
-            result_tar_sc = add_weekly_scores_from(
-                result_tar_sc,
-                df_with_indicatorsw,
-                'composite_score'
-            )
-        if not result_tar_sc.empty:
-            st.dataframe(result_tar_sc)
-        else:
-            st.info(f"No stocks found meeting target score ≥ {target_score}")
-    except Exception as e:
-        st.error(f"Error in target score analysis: {str(e)}")
-    
     # Display results
     st.success("✅ Analysis complete!")
-    
+
     # Configuration Summary
     st.header("📊 Analysis Configuration")
     col1, col2, col3, col4 = st.columns(4)
@@ -872,7 +853,7 @@ if st.button("🚀 Run Analysis", type="primary"):
         st.metric("Selected Indicators", len(selected_indicators))
     with col4:
         st.metric("Max Possible Score", f"{max_possible_score:.1f}")
-    
+
     # Top Score Increases Table
     st.header(f"� Top Score Increases (Last {score_history_days} days)")
     try:
@@ -882,21 +863,19 @@ if st.button("🚀 Run Analysis", type="primary"):
             only_last_date=True,
             last_n=score_history_days
         ).sort_values(by='Score_change', ascending=False)
-        
         if use_weekly_analysis and 'df_with_indicatorsw' in locals():
             result_sc_ch = add_weekly_scores_from(
                 result_sc_ch, 
                 df_with_indicatorsw, 
                 'composite_score'
             )
-        
         if not result_sc_ch.empty:
             st.dataframe(result_sc_ch.head(20))
         else:
             st.info("No score increases found for the selected criteria.")
     except Exception as e:
         st.error(f"Error in score change analysis: {str(e)}")
-    
+
     # Largest Score Decreases Table
     st.header("📉 Largest Score Decreases")
     try:
@@ -910,8 +889,8 @@ if st.button("🚀 Run Analysis", type="primary"):
             st.info("No score changes data available.")
     except Exception as e:
         st.error(f"Error in score decrease analysis: {str(e)}")
-    
-    # Stocks Meeting Target Score Table
+
+    # Stocks Meeting Target Score Table (now appears after config, only once)
     st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
     try:
         result_tar_sc = target_score_cross_section(
@@ -922,14 +901,12 @@ if st.button("🚀 Run Analysis", type="primary"):
             allow_ge=True,
             last_n=score_history_days
         )
-        
         if use_weekly_analysis and 'df_with_indicatorsw' in locals():
             result_tar_sc = add_weekly_scores_from(
                 result_tar_sc,
                 df_with_indicatorsw,
                 'composite_score'
             )
-        
         if not result_tar_sc.empty:
             st.dataframe(result_tar_sc)
         else:
