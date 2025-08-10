@@ -782,34 +782,18 @@ use_weekly_analysis = st.sidebar.checkbox("Include Weekly Analysis", value=True)
 if st.button("🚀 Run Analysis", type="primary"):
     
     with st.spinner("📥 Downloading data..."):
-        # Stocks Meeting Target Score Table (now appears first)
-        st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
         try:
-            result_tar_sc = target_score_cross_section(
-                df_with_indicators,
-                cols=target_score_cols,
-                only_last_date=True,
-                target=target_score,
-                allow_ge=True,
-                last_n=score_history_days
-            )
-        
-            if use_weekly_analysis and 'df_with_indicatorsw' in locals():
-                result_tar_sc = add_weekly_scores_from(
-                    result_tar_sc,
-                    df_with_indicatorsw,
-                    'composite_score'
-                )
-        
-            if not result_tar_sc.empty:
-                st.dataframe(result_tar_sc)
-            else:
-                st.info(f"No stocks found meeting target score ≥ {target_score}")
-        except Exception as e:
-            st.error(f"Error in target score analysis: {str(e)}")
+            # Download daily data
+            df = yf.download(
+                tickers=symbols_list,
+                start=start_date,
+                end=end_date,
+                interval='1d',
+                auto_adjust=False,
+                progress=False
+            ).stack()
             df.index.names = ['date', 'ticker']
             df.columns = df.columns.str.lower()
-            
             # Download weekly data if needed
             if use_weekly_analysis:
                 dfw = yf.download(
@@ -820,13 +804,12 @@ if st.button("🚀 Run Analysis", type="primary"):
                     auto_adjust=False,
                     progress=False
                 ).stack()
-                
                 dfw.index.names = ['date', 'ticker']
                 dfw.columns = dfw.columns.str.lower()
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
             st.stop()
-    
+
     with st.spinner("🔧 Processing indicators..."):
         try:
             # Process daily indicators
@@ -835,7 +818,6 @@ if st.button("🚀 Run Analysis", type="primary"):
             )
             df_with_indicators = df_with_indicators.droplevel(level=0)
             df_with_indicators = df_with_indicators.sort_index()
-            
             # Process weekly indicators if needed
             if use_weekly_analysis:
                 df_with_indicatorsw = dfw.groupby(level=1, group_keys=False).apply(
@@ -850,6 +832,31 @@ if st.button("🚀 Run Analysis", type="primary"):
         except Exception as e:
             st.error(f"Error processing indicators: {str(e)}")
             st.stop()
+
+    # Now render tables (all use df_with_indicators)
+    # Stocks Meeting Target Score Table (now appears first)
+    st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
+    try:
+        result_tar_sc = target_score_cross_section(
+            df_with_indicators,
+            cols=target_score_cols,
+            only_last_date=True,
+            target=target_score,
+            allow_ge=True,
+            last_n=score_history_days
+        )
+        if use_weekly_analysis and 'df_with_indicatorsw' in locals():
+            result_tar_sc = add_weekly_scores_from(
+                result_tar_sc,
+                df_with_indicatorsw,
+                'composite_score'
+            )
+        if not result_tar_sc.empty:
+            st.dataframe(result_tar_sc)
+        else:
+            st.info(f"No stocks found meeting target score ≥ {target_score}")
+    except Exception as e:
+        st.error(f"Error in target score analysis: {str(e)}")
     
     # Display results
     st.success("✅ Analysis complete!")
