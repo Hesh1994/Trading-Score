@@ -363,10 +363,41 @@ def score_change_cross_section(df, cols=None, only_last_date=False, last_n=5):
         for col in hist_cols:
             df_changed[col] = tick_idx.map(hist[col])
 
+    # Add YTD and daily change columns
+    if not df_changed.empty:
+        # YTD change: compare last price to price at first date of current year
+        try:
+            df_changed['YTD_change'] = np.nan
+            for ticker in df_changed.index.get_level_values('ticker'):
+                ticker_df = df.xs(ticker, level='ticker')
+                year_start = dt.date(df.index.get_level_values('date').max().year, 1, 1)
+                if year_start in ticker_df.index.get_level_values('date'):
+                    start_price = ticker_df.xs(year_start, level='date')['adj close']
+                    last_price = ticker_df.iloc[-1]['adj close']
+                    ytd_change = (last_price - start_price) / start_price if start_price != 0 else np.nan
+                    df_changed.loc[ticker, 'YTD_change'] = ytd_change
+        except Exception:
+            pass
+        # Daily change: compare last price to previous day
+        try:
+            df_changed['daily_change'] = np.nan
+            for ticker in df_changed.index.get_level_values('ticker'):
+                ticker_df = df.xs(ticker, level='ticker')
+                if len(ticker_df) > 1:
+                    last_price = ticker_df.iloc[-1]['adj close']
+                    prev_price = ticker_df.iloc[-2]['adj close']
+                    daily_change = (last_price - prev_price) / prev_price if prev_price != 0 else np.nan
+                    df_changed.loc[ticker, 'daily_change'] = daily_change
+        except Exception:
+            pass
     if cols is not None:
         keep = [c for c in cols if c in df_changed.columns] + [c for c in hist_cols if c in df_changed.columns]
         if ret_col in df_changed.columns and ret_col not in keep:
             keep.append(ret_col)
+        # Always include YTD and daily change columns
+        for extra_col in ['YTD_change', 'daily_change']:
+            if extra_col in df_changed.columns and extra_col not in keep:
+                keep.append(extra_col)
         if keep:
             df_changed = df_changed[keep]
 
@@ -410,10 +441,38 @@ def target_score_cross_section(df, cols=None, only_last_date=False, target=3, al
             return pd.DataFrame()
 
         base = cross.loc[tickers]
+        # Add YTD and daily change columns
+        try:
+            base['YTD_change'] = np.nan
+            for ticker in base.index:
+                ticker_df = df.xs(ticker, level='ticker')
+                year_start = dt.date(df.index.get_level_values('date').max().year, 1, 1)
+                if year_start in ticker_df.index.get_level_values('date'):
+                    start_price = ticker_df.xs(year_start, level='date')['adj close']
+                    last_price = ticker_df.iloc[-1]['adj close']
+                    ytd_change = (last_price - start_price) / start_price if start_price != 0 else np.nan
+                    base.loc[ticker, 'YTD_change'] = ytd_change
+        except Exception:
+            pass
+        try:
+            base['daily_change'] = np.nan
+            for ticker in base.index:
+                ticker_df = df.xs(ticker, level='ticker')
+                if len(ticker_df) > 1:
+                    last_price = ticker_df.iloc[-1]['adj close']
+                    prev_price = ticker_df.iloc[-2]['adj close']
+                    daily_change = (last_price - prev_price) / prev_price if prev_price != 0 else np.nan
+                    base.loc[ticker, 'daily_change'] = daily_change
+        except Exception:
+            pass
         if cols is not None:
             keep = [c for c in cols if c in base.columns]
             if ret_col in base.columns and ret_col not in keep:
                 keep.append(ret_col)
+            # Always include YTD and daily change columns
+            for extra_col in ['YTD_change', 'daily_change']:
+                if extra_col in base.columns and extra_col not in keep:
+                    keep.append(extra_col)
             if keep:
                 base = base[keep]
 
@@ -723,17 +782,31 @@ use_weekly_analysis = st.sidebar.checkbox("Include Weekly Analysis", value=True)
 if st.button("🚀 Run Analysis", type="primary"):
     
     with st.spinner("📥 Downloading data..."):
+        # Stocks Meeting Target Score Table (now appears first)
+        st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
         try:
-            # Download daily data
-            df = yf.download(
-                tickers=symbols_list, 
-                start=start_date, 
-                end=end_date, 
-                interval='1d', 
-                auto_adjust=False, 
-                progress=False
-            ).stack()
-            
+            result_tar_sc = target_score_cross_section(
+                df_with_indicators,
+                cols=target_score_cols,
+                only_last_date=True,
+                target=target_score,
+                allow_ge=True,
+                last_n=score_history_days
+            )
+        
+            if use_weekly_analysis and 'df_with_indicatorsw' in locals():
+                result_tar_sc = add_weekly_scores_from(
+                    result_tar_sc,
+                    df_with_indicatorsw,
+                    'composite_score'
+                )
+        
+            if not result_tar_sc.empty:
+                st.dataframe(result_tar_sc)
+            else:
+                st.info(f"No stocks found meeting target score ≥ {target_score}")
+        except Exception as e:
+            st.error(f"Error in target score analysis: {str(e)}")
             df.index.names = ['date', 'ticker']
             df.columns = df.columns.str.lower()
             
@@ -859,31 +932,6 @@ if st.button("🚀 Run Analysis", type="primary"):
 
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Run Analysis' to start!")
-    
-    # Show configuration summary
-    st.subheader("📋 Current Configuration")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Data Range:**", f"{start_date} to {end_date}")
-        st.write("**Symbols:**", f"{len(symbols_list)} symbols ({symbol_option})")
-        st.write("**Selected Indicators:**", ", ".join(selected_indicators) if selected_indicators else "None")
-        
-    with col2:
-        st.write("**Target Score:**", target_score)
-        st.write("**Entry/Exit Scores:**", f"{entry_score}/{exit_score}")
-        st.write("**Score History Days:**", score_history_days)
-        st.write("**Weekly Analysis:**", "Enabled" if use_weekly_analysis else "Disabled")
-        
-    # Show signal weights
-    active_weights = {k: v for k, v in signal_weights.items() if v != 0}
-    if active_weights:
-        st.subheader("⚖️ Active Signal Weights")
-        weight_df = pd.DataFrame(list(active_weights.items()), columns=['Signal', 'Weight'])
-        weight_df['Signal'] = weight_df['Signal'].str.replace('_', ' ').str.title()
-        st.dataframe(weight_df)
-    else:
-        st.info("No signals selected for scoring. Please select signals in the sidebar.")
 
 # Instructions
 with st.expander("📖 How to Use This Dashboard"):
