@@ -780,9 +780,9 @@ if st.button("🚀 Run Analysis", type="primary"):
     
     # Display results
     st.success("✅ Analysis complete!")
-
-    # Overview and configuration summary
-    st.header("📊 Analysis Overview")
+    
+    # Configuration Summary
+    st.header("📊 Analysis Configuration")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Symbols", len(symbols_list))
@@ -792,25 +792,9 @@ if st.button("🚀 Run Analysis", type="primary"):
         st.metric("Selected Indicators", len(selected_indicators))
     with col4:
         st.metric("Max Possible Score", f"{max_possible_score:.1f}")
-
-    st.subheader("⚙️ Current Configuration")
-    config_col1, config_col2 = st.columns(2)
-    with config_col1:
-        st.write("**Selected Indicators:**", ", ".join(selected_indicators))
-        st.write("**Entry/Exit Scores:**", f"{entry_score}/{exit_score}")
-        st.write("**Target Score:**", target_score)
-    with config_col2:
-        active_weights = {k: v for k, v in signal_weights.items() if v != 0}
-        if active_weights:
-            st.write("**Active Signal Weights:**")
-            for signal, weight in active_weights.items():
-                st.write(f"- {signal.replace('_', ' ').title()}: {weight}")
-
-    st.subheader("📋 Sample Data (Last 10 rows)")
-    st.dataframe(df_with_indicators.tail(10))
-
-    # Score Change Analysis
-    st.header("📈 Score Change Analysis")
+    
+    # Top Score Increases Table
+    st.header(f"� Top Score Increases (Last {score_history_days} days)")
     try:
         result_sc_ch = score_change_cross_section(
             df_with_indicators,
@@ -818,31 +802,37 @@ if st.button("🚀 Run Analysis", type="primary"):
             only_last_date=True,
             last_n=score_history_days
         ).sort_values(by='Score_change', ascending=False)
-
+        
         if use_weekly_analysis and 'df_with_indicatorsw' in locals():
             result_sc_ch = add_weekly_scores_from(
-                result_sc_ch,
-                df_with_indicatorsw,
+                result_sc_ch, 
+                df_with_indicatorsw, 
                 'composite_score'
             )
-
-        st.subheader(f"🔥 Top Score Increases (Last {score_history_days} days)")
+        
         if not result_sc_ch.empty:
             st.dataframe(result_sc_ch.head(20))
         else:
             st.info("No score increases found for the selected criteria.")
-
-        st.subheader("📉 Largest Score Decreases")
-        bottom_performers = result_sc_ch.sort_values(by='Score_change', ascending=True).head(10)
-        if not bottom_performers.empty:
-            st.dataframe(bottom_performers)
-        else:
-            st.info("No score decreases found for the selected criteria.")
     except Exception as e:
         st.error(f"Error in score change analysis: {str(e)}")
-
-    # Target Score Analysis
-    st.header("🎯 Target Score Analysis")
+    
+    # Largest Score Decreases Table
+    st.header("📉 Largest Score Decreases")
+    try:
+        if 'result_sc_ch' in locals() and not result_sc_ch.empty:
+            bottom_performers = result_sc_ch.sort_values(by='Score_change', ascending=True).head(10)
+            if not bottom_performers.empty:
+                st.dataframe(bottom_performers)
+            else:
+                st.info("No score decreases found for the selected criteria.")
+        else:
+            st.info("No score changes data available.")
+    except Exception as e:
+        st.error(f"Error in score decrease analysis: {str(e)}")
+    
+    # Stocks Meeting Target Score Table
+    st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
     try:
         result_tar_sc = target_score_cross_section(
             df_with_indicators,
@@ -852,21 +842,21 @@ if st.button("🚀 Run Analysis", type="primary"):
             allow_ge=True,
             last_n=score_history_days
         )
-
+        
         if use_weekly_analysis and 'df_with_indicatorsw' in locals():
             result_tar_sc = add_weekly_scores_from(
                 result_tar_sc,
                 df_with_indicatorsw,
                 'composite_score'
             )
-
-        st.subheader(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
+        
         if not result_tar_sc.empty:
             st.dataframe(result_tar_sc)
         else:
             st.info(f"No stocks found meeting target score ≥ {target_score}")
     except Exception as e:
         st.error(f"Error in target score analysis: {str(e)}")
+
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Run Analysis' to start!")
     
