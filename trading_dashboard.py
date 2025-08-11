@@ -606,6 +606,19 @@ available_indicators = {
     'MACD': 'macd'
 }
 
+# Map indicators to their related signals
+indicator_to_signals = {
+    'rsi': ['rsi_signal', 'rsi_cross_signal', 'rsi_50_signal'],
+    'sma_short': ['sma_short_signal', 'sma_cross_signal'],
+    'sma_long': ['sma_long_signal', 'sma_cross_signal'],
+    'ema_15': ['sma_ema_signal'],
+    'mfi': ['mfi_signal', 'mfi_50_signal', 'mfi_cross_signal'],
+    'stochastic': ['stoch_signal', 'stoch8020_signal'],
+    'aroon': ['aroon_signal', 'aroon_oscillator_signal'],
+    'bollinger': ['bb_signal', 'bb_up_signal'],
+    'macd': ['macd_signal_flag']
+}
+
 selected_indicators = st.sidebar.multiselect(
     "Select Indicators",
     list(available_indicators.keys()),
@@ -684,19 +697,23 @@ selected_signals = st.sidebar.multiselect(
 )
 
 with st.sidebar.expander("🎛️ Configure Signal Weights"):
-    for signal in selected_signals:
+    # Only show signals related to selected indicators
+    related_signals = []
+    for indicator_name in selected_indicators:
+        indicator_key = available_indicators[indicator_name]
+        related_signals.extend(indicator_to_signals.get(indicator_key, []))
+    # Remove duplicates while preserving order
+    seen = set()
+    related_signals = [s for s in related_signals if not (s in seen or seen.add(s))]
+    for signal in related_signals:
+        default_weight = 1.0 if signal in ['sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'rsi_signal'] else 0.0
         weight = st.slider(
             f"{signal.replace('_', ' ').title()}",
-            -3.0, 3.0, 1.0, 0.1,
+            -10.0, 10.0, default_weight, 0.1,
             key=f"weight_{signal}"
         )
         signal_weights[signal] = weight
         max_possible_score += abs(weight)
-    
-    # Set unselected signals to 0 weight
-    for signal in all_signals:
-        if signal not in selected_signals:
-            signal_weights[signal] = 0.0
 
 # Target Score Configuration
 st.sidebar.subheader("🎯 Target Score")
