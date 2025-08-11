@@ -733,12 +733,13 @@ exit_score = st.sidebar.selectbox("Exit Score", [-1, 1], index=1)
 st.sidebar.subheader("🔍 Analysis Configuration")
 
 # Available columns for analysis
+
 base_columns = ['adj close', 'composite_score', 'Score_change', 'volume', 'high', 'low', 'open', 'close']
 indicator_columns = ['rsi', 'rsi_mid', 'sma_short', 'sma_long', 'ema_15', 'ema_manual', 'mfi', 'mfi_mid', 
                     'stoch_k', 'stoch_d', 'aroon_up', 'aroon_down', 'aroon_oscillator',
                     'bb_upper', 'bb_middle', 'bb_lower', 'bb_percent_b', 'bb_bandwidth',
                     'macd_line', 'macd_signal', 'macd_histogram']
-signal_columns = all_signals
+signal_columns = related_signals
 
 analysis_columns = base_columns + indicator_columns + signal_columns
 
