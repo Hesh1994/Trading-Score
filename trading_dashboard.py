@@ -365,7 +365,6 @@ def score_change_cross_section(df, cols=None, only_last_date=False, last_n=5):
 
     # Add YTD and daily change columns
     if not df_changed.empty:
-        # YTD change: compare last price to price at first available date of current year
         try:
             df_changed['YTD_change'] = np.nan
             for ticker in df_changed.index.get_level_values('ticker'):
@@ -381,7 +380,6 @@ def score_change_cross_section(df, cols=None, only_last_date=False, last_n=5):
                     df_changed.loc[ticker, 'YTD_change'] = ytd_change
         except Exception:
             pass
-        # Daily change: compare last price to previous day
         try:
             df_changed['daily_change'] = np.nan
             for ticker in df_changed.index.get_level_values('ticker'):
@@ -393,14 +391,22 @@ def score_change_cross_section(df, cols=None, only_last_date=False, last_n=5):
                     df_changed.loc[ticker, 'daily_change'] = daily_change
         except Exception:
             pass
+    # Reorder columns: stock price, then returns, then others
     if cols is not None:
         keep = [c for c in cols if c in df_changed.columns] + [c for c in hist_cols if c in df_changed.columns]
-        if ret_col in df_changed.columns and ret_col not in keep:
-            keep.append(ret_col)
         # Always include YTD and daily change columns
         for extra_col in ['YTD_change', 'daily_change']:
             if extra_col in df_changed.columns and extra_col not in keep:
                 keep.append(extra_col)
+        # Move return columns right after 'adj close'
+        return_cols = [c for c in df_changed.columns if c.startswith('return_')]
+        if 'adj close' in keep:
+            adj_close_idx = keep.index('adj close')
+            for rc in return_cols:
+                if rc in keep:
+                    keep.remove(rc)
+            for i, rc in enumerate(return_cols):
+                keep.insert(adj_close_idx + 1 + i, rc)
         if keep:
             df_changed = df_changed[keep]
 
@@ -471,14 +477,22 @@ def target_score_cross_section(df, cols=None, only_last_date=False, target=3, al
                     base.loc[ticker, 'daily_change'] = daily_change
         except Exception:
             pass
+        # Reorder columns: stock price, then returns, then others
         if cols is not None:
             keep = [c for c in cols if c in base.columns]
-            if ret_col in base.columns and ret_col not in keep:
-                keep.append(ret_col)
             # Always include YTD and daily change columns
             for extra_col in ['YTD_change', 'daily_change']:
                 if extra_col in base.columns and extra_col not in keep:
                     keep.append(extra_col)
+            # Move return columns right after 'adj close'
+            return_cols = [c for c in base.columns if c.startswith('return_')]
+            if 'adj close' in keep:
+                adj_close_idx = keep.index('adj close')
+                for rc in return_cols:
+                    if rc in keep:
+                        keep.remove(rc)
+                for i, rc in enumerate(return_cols):
+                    keep.insert(adj_close_idx + 1 + i, rc)
             if keep:
                 base = base[keep]
 
@@ -854,6 +868,30 @@ if st.button("🚀 Run Analysis", type="primary"):
     with col4:
         st.metric("Max Possible Score", f"{max_possible_score:.1f}")
 
+    # Stocks Meeting Target Score Table (now appears first after config)
+    st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
+    try:
+        result_tar_sc = target_score_cross_section(
+            df_with_indicators,
+            cols=target_score_cols,
+            only_last_date=True,
+            target=target_score,
+            allow_ge=True,
+            last_n=score_history_days
+        )
+        if use_weekly_analysis and 'df_with_indicatorsw' in locals():
+            result_tar_sc = add_weekly_scores_from(
+                result_tar_sc,
+                df_with_indicatorsw,
+                'composite_score'
+            )
+        if not result_tar_sc.empty:
+            st.dataframe(result_tar_sc)
+        else:
+            st.info(f"No stocks found meeting target score ≥ {target_score}")
+    except Exception as e:
+        st.error(f"Error in target score analysis: {str(e)}")
+
     # Top Score Increases Table
     st.header(f"� Top Score Increases (Last {score_history_days} days)")
     try:
@@ -889,30 +927,6 @@ if st.button("🚀 Run Analysis", type="primary"):
             st.info("No score changes data available.")
     except Exception as e:
         st.error(f"Error in score decrease analysis: {str(e)}")
-
-    # Stocks Meeting Target Score Table (now appears after config, only once)
-    st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
-    try:
-        result_tar_sc = target_score_cross_section(
-            df_with_indicators,
-            cols=target_score_cols,
-            only_last_date=True,
-            target=target_score,
-            allow_ge=True,
-            last_n=score_history_days
-        )
-        if use_weekly_analysis and 'df_with_indicatorsw' in locals():
-            result_tar_sc = add_weekly_scores_from(
-                result_tar_sc,
-                df_with_indicatorsw,
-                'composite_score'
-            )
-        if not result_tar_sc.empty:
-            st.dataframe(result_tar_sc)
-        else:
-            st.info(f"No stocks found meeting target score ≥ {target_score}")
-    except Exception as e:
-        st.error(f"Error in target score analysis: {str(e)}")
 
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Run Analysis' to start!")
