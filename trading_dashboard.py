@@ -363,41 +363,13 @@ def score_change_cross_section(df, cols=None, only_last_date=False, last_n=5):
         for col in hist_cols:
             df_changed[col] = tick_idx.map(hist[col])
 
-    # Add YTD and daily change columns
-    if not df_changed.empty:
-        try:
-            df_changed['YTD_change'] = np.nan
-            for ticker in df_changed.index.get_level_values('ticker'):
-                ticker_df = df.xs(ticker, level='ticker')
-                current_year = df.index.get_level_values('date').max().year
-                ticker_dates = ticker_df.index.get_level_values('date')
-                ytd_dates = [d for d in ticker_dates if d.year == current_year]
-                if ytd_dates:
-                    first_ytd_date = min(ytd_dates)
-                    start_price = ticker_df.xs(first_ytd_date, level='date')['adj close']
-                    last_price = ticker_df.iloc[-1]['adj close']
-                    ytd_change = (last_price - start_price) / start_price if start_price != 0 else np.nan
-                    df_changed.loc[ticker, 'YTD_change'] = ytd_change
-        except Exception:
-            pass
-        try:
-            df_changed['daily_change'] = np.nan
-            for ticker in df_changed.index.get_level_values('ticker'):
-                ticker_df = df.xs(ticker, level='ticker')
-                if len(ticker_df) > 1:
-                    last_price = ticker_df.iloc[-1]['adj close']
-                    prev_price = ticker_df.iloc[-2]['adj close']
-                    daily_change = (last_price - prev_price) / prev_price if prev_price != 0 else np.nan
-                    df_changed.loc[ticker, 'daily_change'] = daily_change
-        except Exception:
-            pass
     # Reorder columns: stock price, then returns, then others
     if cols is not None:
         keep = [c for c in cols if c in df_changed.columns] + [c for c in hist_cols if c in df_changed.columns]
-        # Always include YTD and daily change columns
+        # Remove YTD_change and daily_change columns if present
         for extra_col in ['YTD_change', 'daily_change']:
-            if extra_col in df_changed.columns and extra_col not in keep:
-                keep.append(extra_col)
+            if extra_col in keep:
+                keep.remove(extra_col)
         # Move return columns right after 'adj close'
         return_cols = [c for c in df_changed.columns if c.startswith('return_')]
         if 'adj close' in keep:
@@ -450,40 +422,13 @@ def target_score_cross_section(df, cols=None, only_last_date=False, target=3, al
             return pd.DataFrame()
 
         base = cross.loc[tickers]
-        # Add YTD and daily change columns
-        try:
-            base['YTD_change'] = np.nan
-            for ticker in base.index:
-                ticker_df = df.xs(ticker, level='ticker')
-                current_year = df.index.get_level_values('date').max().year
-                ticker_dates = ticker_df.index.get_level_values('date')
-                ytd_dates = [d for d in ticker_dates if d.year == current_year]
-                if ytd_dates:
-                    first_ytd_date = min(ytd_dates)
-                    start_price = ticker_df.xs(first_ytd_date, level='date')['adj close']
-                    last_price = ticker_df.iloc[-1]['adj close']
-                    ytd_change = (last_price - start_price) / start_price if start_price != 0 else np.nan
-                    base.loc[ticker, 'YTD_change'] = ytd_change
-        except Exception:
-            pass
-        try:
-            base['daily_change'] = np.nan
-            for ticker in base.index:
-                ticker_df = df.xs(ticker, level='ticker')
-                if len(ticker_df) > 1:
-                    last_price = ticker_df.iloc[-1]['adj close']
-                    prev_price = ticker_df.iloc[-2]['adj close']
-                    daily_change = (last_price - prev_price) / prev_price if prev_price != 0 else np.nan
-                    base.loc[ticker, 'daily_change'] = daily_change
-        except Exception:
-            pass
         # Reorder columns: stock price, then returns, then others
         if cols is not None:
             keep = [c for c in cols if c in base.columns]
-            # Always include YTD and daily change columns
+            # Remove YTD_change and daily_change columns if present
             for extra_col in ['YTD_change', 'daily_change']:
-                if extra_col in base.columns and extra_col not in keep:
-                    keep.append(extra_col)
+                if extra_col in keep:
+                    keep.remove(extra_col)
             # Move return columns right after 'adj close'
             return_cols = [c for c in base.columns if c.startswith('return_')]
             if 'adj close' in keep:
