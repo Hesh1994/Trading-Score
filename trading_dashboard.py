@@ -673,18 +673,17 @@ for indicator_name in selected_indicators:
             }
 
 # Signal Weights Configuration
+
 st.sidebar.subheader("⚖️ Signal Weights")
 
-# Define all possible signals
-all_signals = [
-    'sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'sma_cross_signal',
-    'rsi_signal', 'rsi_cross_signal', 'rsi_50_signal',
-    'mfi_signal', 'mfi_50_signal', 'mfi_cross_signal',
-    'stoch_signal', 'stoch8020_signal',
-    'aroon_signal', 'aroon_oscillator_signal',
-    'bb_signal', 'bb_up_signal',
-    'macd_signal_flag'
-]
+# Only show signals related to selected indicators
+related_signals = []
+for indicator_name in selected_indicators:
+    indicator_key = available_indicators[indicator_name]
+    related_signals.extend(indicator_to_signals.get(indicator_key, []))
+# Remove duplicates while preserving order
+seen = set()
+related_signals = [s for s in related_signals if not (s in seen or seen.add(s))]
 
 signal_weights = {}
 max_possible_score = 0
@@ -692,8 +691,8 @@ max_possible_score = 0
 # Checklist for signals to include in scoring
 selected_signals = st.sidebar.multiselect(
     "Select Signals for Scoring",
-    all_signals,
-    default=['sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'rsi_signal']
+    related_signals,
+    default=[s for s in ['sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'rsi_signal'] if s in related_signals]
 )
 
 with st.sidebar.expander("🎛️ Configure Signal Weights"):
