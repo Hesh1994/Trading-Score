@@ -7,6 +7,7 @@ import warnings
 from typing import Optional
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
 
 warnings.filterwarnings('ignore')
 
@@ -580,9 +581,18 @@ if symbol_option == "Custom":
 else:
     @st.cache_data
     def get_sp500_symbols():
-        sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
-        sp500['Symbol'] = sp500['Symbol'].str.replace('.', '-')
-        return sp500['Symbol'].unique().tolist()
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        try:
+            response = requests.get('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', headers=headers, timeout=10)
+            response.raise_for_status()
+            sp500 = pd.read_html(response.text)[0]
+            sp500['Symbol'] = sp500['Symbol'].str.replace('.', '-')
+            return sp500['Symbol'].unique().tolist()
+        except Exception as e:
+            st.error(f"Failed to fetch S&P 500 symbols: {str(e)}")
+            return []
     
     sp500_symbols = get_sp500_symbols()
     if symbol_option == "S&P 500 (first 50)":
