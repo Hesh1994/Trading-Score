@@ -303,7 +303,7 @@ def process_symbol_indicators(group, indicator_params, signal_weights, entry_sco
     
     # Strategy returns calculation
     group['trade_price'] = np.where(group['pos_rule_diff'].abs() > 0, group['adj close'], np.nan)
-    group['trade_price'] = group['trade_price'].fillna(method='ffill')
+    group['trade_price'] = group['trade_price'].ffill()
     
     # Calculate strategy returns when closing positions
     group['st_ret'] = np.where(
