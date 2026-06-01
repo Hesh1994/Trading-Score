@@ -209,11 +209,15 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                         tickers_data[ticker] = ticker_df
                         st.write(f"✅ {ticker}: {len(ticker_df)} valid rows")
             else:
-                # Multiple tickers: columns are MultiIndex (ticker, OHLCV)
+                # Multiple tickers: columns are MultiIndex (PriceType, Ticker)
                 st.write(f"Multiple tickers - data is MultiIndex")
+                
+                # Extract ticker data from MultiIndex columns
                 for ticker in symbols_list:
                     try:
-                        ticker_df = df_raw[ticker].copy()
+                        # For MultiIndex, ticker is at level 1 (second level)
+                        # Access using df_raw.xs(ticker, level=1, axis=1)
+                        ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
                         ticker_df.columns = ticker_df.columns.str.lower()
                         
                         st.write(f"{ticker} - columns: {ticker_df.columns.tolist()}")
@@ -227,7 +231,7 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                                 tickers_data[ticker] = ticker_df
                                 st.write(f"✅ {ticker}: {len(ticker_df)} valid rows")
                         else:
-                            st.write(f"❌ {ticker}: missing required columns")
+                            st.write(f"❌ {ticker}: missing required columns. Available: {ticker_df.columns.tolist()}")
                     except (KeyError, TypeError) as e:
                         st.write(f"❌ {ticker}: {str(e)}")
                         continue
