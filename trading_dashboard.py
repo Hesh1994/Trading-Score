@@ -719,11 +719,7 @@ for indicator_name in selected_indicators:
                 'signal': st.slider(f"MACD Signal", 5, 15, 9, key="macd_signal")
             }
 
-# Signal Weights Configuration
-
-st.sidebar.subheader("⚖️ Signal Weights")
-
-# Only show signals related to selected indicators
+# Signal Weights Configuration - using defaults
 related_signals = []
 for indicator_name in selected_indicators:
     indicator_key = available_indicators[indicator_name]
@@ -732,55 +728,18 @@ for indicator_name in selected_indicators:
 seen = set()
 related_signals = [s for s in related_signals if not (s in seen or seen.add(s))]
 
+# Set default signal weights for selected signals
 signal_weights = {}
-max_possible_score = 0
+for signal in related_signals:
+    signal_weights[signal] = 1.0 if signal in ['sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'rsi_signal'] else 0.0
 
-# Checklist for signals to include in scoring
-selected_signals = st.sidebar.multiselect(
-    "Select Signals for Scoring",
-    related_signals,
-    default=[s for s in ['sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'rsi_signal'] if s in related_signals]
-)
+max_possible_score = sum(abs(w) for w in signal_weights.values())
 
-with st.sidebar.expander("🎛️ Configure Signal Weights"):
-    # Only show signals related to selected indicators
-    related_signals = []
-    for indicator_name in selected_indicators:
-        indicator_key = available_indicators[indicator_name]
-        related_signals.extend(indicator_to_signals.get(indicator_key, []))
-    # Remove duplicates while preserving order
-    seen = set()
-    related_signals = [s for s in related_signals if not (s in seen or seen.add(s))]
-    for signal in related_signals:
-        default_weight = 1.0 if signal in ['sma_ema_signal', 'sma_short_signal', 'sma_long_signal', 'rsi_signal'] else 0.0
-        weight = st.slider(
-            f"{signal.replace('_', ' ').title()}",
-            -10.0, 10.0, default_weight, 0.1,
-            key=f"weight_{signal}"
-        )
-        signal_weights[signal] = weight
-        max_possible_score += abs(weight)
+# Default values for Position Rules
+entry_score = 1
+exit_score = -1
 
-# Target Score Configuration
-st.sidebar.subheader("🎯 Target Score")
-target_score = st.sidebar.slider(
-    "Target Score",
-    -max_possible_score if max_possible_score > 0 else -10,
-    max_possible_score if max_possible_score > 0 else 10,
-    3.0 if max_possible_score >= 3 else max_possible_score/2,
-    0.1
-)
-
-# Position Rules
-st.sidebar.subheader("📈 Position Rules")
-entry_score = st.sidebar.selectbox("Entry Score", [-1, 1], index=0)
-exit_score = st.sidebar.selectbox("Exit Score", [-1, 1], index=1)
-
-# Analysis Configuration
-st.sidebar.subheader("🔍 Analysis Configuration")
-
-# Available columns for analysis
-
+# Default values for Analysis Configuration
 base_columns = ['adj close', 'composite_score', 'Score_change', 'volume', 'high', 'low', 'open', 'close']
 indicator_columns = ['rsi', 'rsi_mid', 'sma_short', 'sma_long', 'ema_15', 'ema_manual', 'mfi', 'mfi_mid', 
                     'stoch_k', 'stoch_d', 'aroon_up', 'aroon_down', 'aroon_oscillator',
@@ -790,19 +749,10 @@ signal_columns = related_signals
 
 analysis_columns = base_columns + indicator_columns + signal_columns
 
-score_change_cols = st.sidebar.multiselect(
-    "Score Change Analysis Columns",
-    analysis_columns,
-    default=['Score_change', 'adj close', 'composite_score']
-)
-
-target_score_cols = st.sidebar.multiselect(
-    "Target Score Analysis Columns", 
-    analysis_columns,
-    default=['adj close', 'composite_score', 'Score_change']
-)
-
-score_history_days = st.sidebar.slider("Score History Days", 3, 14, 5)
+score_change_cols = ['Score_change', 'adj close', 'composite_score']
+target_score_cols = ['adj close', 'composite_score', 'Score_change']
+score_history_days = 5
+target_score = 3.0
 
 # Weekly Analysis Toggle
 use_weekly_analysis = st.sidebar.checkbox("Include Weekly Analysis", value=False)
@@ -876,19 +826,7 @@ if st.button("🚀 Run Analysis", type="primary"):
     # Display results
     st.success("✅ Analysis complete!")
 
-    # Configuration Summary
-    st.header("📊 Analysis Configuration")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Symbols", len(symbols_list))
-    with col2:
-        st.metric("Date Range", f"{(end_date - start_date).days} days")
-    with col3:
-        st.metric("Selected Indicators", len(selected_indicators))
-    with col4:
-        st.metric("Max Possible Score", f"{max_possible_score:.1f}")
-
-    # Stocks Meeting Target Score Table (now appears first after config)
+    # Stocks Meeting Target Score Table
     st.header(f"🎯 Stocks Meeting Target Score ≥ {target_score}")
     try:
         result_tar_sc = target_score_cross_section(
@@ -959,20 +897,15 @@ with st.expander("📖 How to Use This Dashboard"):
     2. **Choose Symbols**: Select from S&P 500 stocks or enter custom symbols
     3. **Select Indicators**: Choose which technical indicators to calculate
     4. **Set Parameters**: Adjust parameters for each selected indicator
-    5. **Configure Scoring**: Select signals and set their weights
-    6. **Set Target Score**: Define your target composite score threshold
-    7. **Run Analysis**: Click the 'Run Analysis' button to process data
+    5. **Run Analysis**: Click the 'Run Analysis' button to process data
     
     ### Features
     - **Interactive Charts**: Hover over charts for detailed information
     - **Multiple Analysis Views**: Score changes, target scores, weekly analysis
-    - **Individual Stock Analysis**: Detailed view for specific stocks
-    - **Configurable Scoring**: Custom weights for different signals
     - **Weekly Integration**: Compare daily vs weekly scores
     
     ### Tips
     - Start with fewer symbols for faster processing
     - Use default indicator parameters as a starting point
-    - Adjust signal weights based on your trading strategy
     - Monitor both score changes and absolute target scores
     """)
