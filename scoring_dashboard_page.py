@@ -105,64 +105,84 @@ with col2:
     sell_threshold = st.number_input("Sell Threshold", value=3.0, min_value=0.0, step=0.5)
 
 # Indicator Configuration
-st.sidebar.subheader("📈 Indicator Configuration")
+st.sidebar.subheader("📈 Indicators to Include")
 
+# Initialize indicator_config
 indicator_config = {}
 for ind_key, ind_config in INDICATORS_CONFIG.items():
-    with st.sidebar.expander(f"{ind_config['label']}", expanded=ind_config['enabled']):
-        # Enable/Disable
-        enabled = st.checkbox(
-            "Enabled",
-            value=ind_config['enabled'],
-            key=f"{ind_key}_enabled"
-        )
-        indicator_config[ind_key] = {**ind_config, 'enabled': enabled}
+    indicator_config[ind_key] = ind_config.copy()
+
+# Section 1: Select which indicators to include
+included_indicators = {}
+for ind_key, ind_config in INDICATORS_CONFIG.items():
+    included = st.sidebar.checkbox(
+        ind_config['label'],
+        value=ind_config['enabled'],
+        key=f"{ind_key}_included"
+    )
+    indicator_config[ind_key]['enabled'] = included
+    if included:
+        included_indicators[ind_key] = ind_config
+
+# Section 2: Configure selected indicators
+if included_indicators:
+    st.sidebar.subheader("⚙️ Configure Indicators")
+    
+    selected_indicator = st.sidebar.selectbox(
+        "Select indicator to configure",
+        options=list(included_indicators.keys()),
+        format_func=lambda x: included_indicators[x]['label'],
+        key="indicator_selector"
+    )
+    
+    if selected_indicator:
+        ind_config = indicator_config[selected_indicator]
+        st.sidebar.write(f"**{ind_config['label']}**")
         
-        # Show parameters if enabled
-        if enabled:
-            st.write("**Parameters:**")
-            params = ind_config['parameters'].copy()
-            
-            # Edit each parameter
-            for param_key, param_value in params.items():
-                if isinstance(param_value, int):
-                    new_value = st.slider(
-                        param_key.replace('_', ' ').title(),
-                        min_value=1,
-                        max_value=100,
-                        value=param_value,
-                        key=f"{ind_key}_{param_key}"
-                    )
-                    indicator_config[ind_key]['parameters'][param_key] = new_value
-                elif isinstance(param_value, float):
-                    new_value = st.slider(
-                        param_key.replace('_', ' ').title(),
-                        min_value=0.5,
-                        max_value=5.0,
-                        value=param_value,
-                        step=0.1,
-                        key=f"{ind_key}_{param_key}"
-                    )
-                    indicator_config[ind_key]['parameters'][param_key] = new_value
-            
-            # Show buy/sell scores
-            col1, col2 = st.columns(2)
-            with col1:
-                buy_score = st.number_input(
-                    "Buy Score",
-                    value=float(ind_config['buy_score']),
-                    step=0.5,
-                    key=f"{ind_key}_buy_score"
+        # Show parameters
+        st.sidebar.write("Parameters:")
+        params = ind_config['parameters'].copy()
+        
+        for param_key, param_value in params.items():
+            if isinstance(param_value, int):
+                new_value = st.sidebar.slider(
+                    param_key.replace('_', ' ').title(),
+                    min_value=1,
+                    max_value=100,
+                    value=param_value,
+                    key=f"{selected_indicator}_{param_key}"
                 )
-                indicator_config[ind_key]['buy_score'] = buy_score
-            with col2:
-                sell_score = st.number_input(
-                    "Sell Score",
-                    value=float(ind_config['sell_score']),
-                    step=0.5,
-                    key=f"{ind_key}_sell_score"
+                indicator_config[selected_indicator]['parameters'][param_key] = new_value
+            elif isinstance(param_value, float):
+                new_value = st.sidebar.slider(
+                    param_key.replace('_', ' ').title(),
+                    min_value=0.5,
+                    max_value=5.0,
+                    value=param_value,
+                    step=0.1,
+                    key=f"{selected_indicator}_{param_key}"
                 )
-                indicator_config[ind_key]['sell_score'] = sell_score
+                indicator_config[selected_indicator]['parameters'][param_key] = new_value
+        
+        # Show buy/sell scores
+        st.sidebar.write("Scoring:")
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            buy_score = st.number_input(
+                "Buy Score",
+                value=float(ind_config['buy_score']),
+                step=0.5,
+                key=f"{selected_indicator}_buy_score"
+            )
+            indicator_config[selected_indicator]['buy_score'] = buy_score
+        with col2:
+            sell_score = st.number_input(
+                "Sell Score",
+                value=float(ind_config['sell_score']),
+                step=0.5,
+                key=f"{selected_indicator}_sell_score"
+            )
+            indicator_config[selected_indicator]['sell_score'] = sell_score
 
 # ============================================================================
 # MAIN CONTENT
@@ -172,7 +192,6 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
     with st.spinner("📥 Downloading data..."):
         try:
             # Download data
-            st.write(f"Downloading data for {len(symbols_list)} symbols from {start_date} to {end_date}...")
             df_raw = yf.download(
                 tickers=symbols_list,
                 start=start_date,
@@ -185,9 +204,6 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                 st.error("No data downloaded. Check your symbols and date range.")
                 st.stop()
             
-            st.write(f"Downloaded data shape: {df_raw.shape}")
-            st.write(f"Columns: {df_raw.columns.tolist()}")
-            
             # Prepare data for scoring (dictionary of {ticker: DataFrame})
             tickers_data = {}
             
@@ -197,9 +213,6 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                 ticker_df = df_raw.copy()
                 ticker_df.columns = ticker_df.columns.str.lower()
                 
-                st.write(f"Single ticker {ticker} - columns after lowercase: {ticker_df.columns.tolist()}")
-                st.write(f"Data shape: {ticker_df.shape}, non-null values: {ticker_df.notna().sum().to_dict()}")
-                
                 # Check for required columns (case-insensitive)
                 cols_lower = {c.lower() for c in df_raw.columns}
                 if 'close' in cols_lower and 'open' in cols_lower and 'volume' in cols_lower:
@@ -207,11 +220,8 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                     ticker_df = ticker_df.dropna(subset=['close'])
                     if len(ticker_df) > 0:
                         tickers_data[ticker] = ticker_df
-                        st.write(f"✅ {ticker}: {len(ticker_df)} valid rows")
             else:
                 # Multiple tickers: columns are MultiIndex (PriceType, Ticker)
-                st.write(f"Multiple tickers - data is MultiIndex")
-                
                 # Extract ticker data from MultiIndex columns
                 for ticker in symbols_list:
                     try:
@@ -220,8 +230,6 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                         ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
                         ticker_df.columns = ticker_df.columns.str.lower()
                         
-                        st.write(f"{ticker} - columns: {ticker_df.columns.tolist()}")
-                        
                         # Check for required columns
                         cols_lower = {c.lower() for c in ticker_df.columns}
                         if 'close' in cols_lower and 'open' in cols_lower and 'volume' in cols_lower:
@@ -229,23 +237,15 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                             ticker_df = ticker_df.dropna(subset=['close'])
                             if len(ticker_df) > 0:
                                 tickers_data[ticker] = ticker_df
-                                st.write(f"✅ {ticker}: {len(ticker_df)} valid rows")
-                        else:
-                            st.write(f"❌ {ticker}: missing required columns. Available: {ticker_df.columns.tolist()}")
-                    except (KeyError, TypeError) as e:
-                        st.write(f"❌ {ticker}: {str(e)}")
+                    except (KeyError, TypeError):
                         continue
             
             if not tickers_data:
                 st.error(f"No valid data for selected symbols. Tried: {', '.join(symbols_list[:5])}")
                 st.stop()
             
-            st.success(f"✅ Successfully loaded data for {len(tickers_data)} symbols")
-            
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
-            import traceback
-            st.error(f"Debug: {traceback.format_exc()}")
             st.stop()
     
     with st.spinner("🔧 Scoring stocks..."):
