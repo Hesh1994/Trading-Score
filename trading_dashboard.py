@@ -8,6 +8,7 @@ from typing import Optional
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
+import io
 
 warnings.filterwarnings('ignore')
 
@@ -587,7 +588,7 @@ else:
         try:
             response = requests.get('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', headers=headers, timeout=10)
             response.raise_for_status()
-            sp500 = pd.read_html(response.text)[0]
+            sp500 = pd.read_html(io.StringIO(response.text))[0]
             sp500['Symbol'] = sp500['Symbol'].str.replace('.', '-')
             return sp500['Symbol'].unique().tolist()
         except Exception as e:
