@@ -72,7 +72,8 @@ def calculate_mfi_stacked(group, period=14):
     negative_money_flow = np.where(price_change < 0, raw_money_flow, 0)
     positive_money_flow_sum = pd.Series(positive_money_flow).rolling(window=period).sum()
     negative_money_flow_sum = pd.Series(negative_money_flow).rolling(window=period).sum()
-    money_flow_ratio = positive_money_flow_sum / negative_money_flow_sum
+    # Add small epsilon to avoid division by zero
+    money_flow_ratio = positive_money_flow_sum / (negative_money_flow_sum + 1e-10)
     mfi = 100 - (100 / (1 + money_flow_ratio))
     return mfi
 
@@ -80,7 +81,8 @@ def calculate_stochastic_stacked(group, k_period=14, d_period=3):
     """Calculate Stochastic for stacked DataFrame"""
     lowest_low = group['low'].rolling(window=k_period).min()
     highest_high = group['high'].rolling(window=k_period).max()
-    stoch_k = 100 * (group['close'] - lowest_low) / (highest_high - lowest_low)
+    # Add small epsilon to avoid division by zero
+    stoch_k = 100 * (group['close'] - lowest_low) / ((highest_high - lowest_low) + 1e-10)
     stoch_d = stoch_k.rolling(window=d_period).mean()
     return stoch_k, stoch_d
 
@@ -125,8 +127,9 @@ def calculate_bollinger_bands_stacked(group, period=20, std_dev=2):
     bb_std = group['close'].rolling(window=period).std()
     bb_upper = bb_middle + (bb_std * std_dev)
     bb_lower = bb_middle - (bb_std * std_dev)
-    bb_percent_b = (group['close'] - bb_lower) / (bb_upper - bb_lower)
-    bb_bandwidth = (bb_upper - bb_lower) / bb_middle
+    # Add small epsilon to avoid division by zero
+    bb_percent_b = (group['close'] - bb_lower) / ((bb_upper - bb_lower) + 1e-10)
+    bb_bandwidth = (bb_upper - bb_lower) / (bb_middle + 1e-10)
     return bb_upper, bb_middle, bb_lower, bb_percent_b, bb_bandwidth
 
 def calculate_macd_stacked(group, fast=12, slow=26, signal=9):
