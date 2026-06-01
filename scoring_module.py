@@ -129,17 +129,31 @@ def calculate_macd(df, fast=12, slow=26, signal=9):
 # CRITERIA EVALUATION FUNCTIONS
 # ============================================================================
 
-def evaluate_rsi_criteria(rsi_current, buy_criteria, sell_criteria):
-    """Evaluate RSI buy and sell criteria"""
+def evaluate_rsi_criteria(rsi_current, buy_criteria, sell_criteria, parameters=None):
+    """Evaluate RSI buy and sell criteria with configurable thresholds"""
     buy_triggered = False
     sell_triggered = False
     
     if pd.notna(rsi_current):
-        if buy_criteria['operator'] in ['<', 'less_than']:
-            buy_triggered = rsi_current < buy_criteria['threshold']
+        # Get thresholds from parameters if using parameter-based thresholds
+        if parameters and buy_criteria.get('threshold_type') == 'parameter':
+            buy_threshold = parameters.get('buy_threshold', 50.0)
+            sell_threshold = parameters.get('sell_threshold', 50.0)
+        else:
+            buy_threshold = buy_criteria.get('threshold', 30)
+            sell_threshold = sell_criteria.get('threshold', 70)
         
+        # Evaluate buy criteria
+        if buy_criteria['operator'] in ['<', 'less_than']:
+            buy_triggered = rsi_current < buy_threshold
+        elif buy_criteria['operator'] in ['>', 'greater_than']:
+            buy_triggered = rsi_current > buy_threshold
+        
+        # Evaluate sell criteria
         if sell_criteria['operator'] in ['>', 'greater_than']:
-            sell_triggered = rsi_current > sell_criteria['threshold']
+            sell_triggered = rsi_current > sell_threshold
+        elif sell_criteria['operator'] in ['<', 'less_than']:
+            sell_triggered = rsi_current < sell_threshold
     
     return buy_triggered, sell_triggered
 

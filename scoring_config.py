@@ -15,14 +15,16 @@ INDICATORS_CONFIG = {
         'label': 'RSI (Relative Strength Index)',
         'parameters': {
             'period': 14,
+            'buy_threshold': 50.0,      # Buy when RSI > this value
+            'sell_threshold': 50.0,     # Sell when RSI < this value
         },
         'buy_criteria': {
-            'operator': '<',  # 'less_than' or '<'
-            'threshold': 30,
+            'operator': '>',  # RSI > buy_threshold
+            'threshold_type': 'parameter',  # Use buy_threshold from parameters
         },
         'sell_criteria': {
-            'operator': '>',
-            'threshold': 70,
+            'operator': '<',  # RSI < sell_threshold
+            'threshold_type': 'parameter',  # Use sell_threshold from parameters
         },
         'buy_score': 1.0,
         'sell_score': 1.0,
