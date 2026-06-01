@@ -180,27 +180,32 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                 auto_adjust=False
             )
             
-            # Normalize column names
-            df_raw.columns = df_raw.columns.str.lower()
-            
             if df_raw.empty:
                 st.error("No data downloaded. Check your symbols and date range.")
                 st.stop()
             
             # Prepare data for scoring (dictionary of {ticker: DataFrame})
             tickers_data = {}
+            
             if len(symbols_list) == 1:
-                # Single ticker returns Series-like structure
-                tickers_data[symbols_list[0]] = df_raw
+                # Single ticker: columns are simple (Adj Close, Close, High, Low, Open, Volume)
+                ticker = symbols_list[0]
+                ticker_df = df_raw.copy()
+                ticker_df.columns = ticker_df.columns.str.lower()
+                if not ticker_df.empty:
+                    tickers_data[ticker] = ticker_df
             else:
-                # Multiple tickers: separate by ticker
+                # Multiple tickers: columns are MultiIndex (ticker, OHLCV)
+                # Flatten and separate by ticker
                 for ticker in symbols_list:
                     try:
                         ticker_df = df_raw[ticker].copy()
+                        # Normalize column names to lowercase
+                        ticker_df.columns = ticker_df.columns.str.lower()
                         if not ticker_df.empty and ticker_df.notna().sum().sum() > 0:
                             tickers_data[ticker] = ticker_df
-                    except Exception:
-                        pass
+                    except KeyError:
+                        continue  # Skip if ticker not in data
             
             if not tickers_data:
                 st.error("No valid data for selected symbols.")
