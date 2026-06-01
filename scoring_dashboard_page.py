@@ -192,27 +192,40 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                 ticker = symbols_list[0]
                 ticker_df = df_raw.copy()
                 ticker_df.columns = ticker_df.columns.str.lower()
-                if not ticker_df.empty:
-                    tickers_data[ticker] = ticker_df
+                
+                # Ensure required columns exist
+                required_cols = {'open', 'high', 'low', 'close', 'volume'}
+                if required_cols.issubset(set(ticker_df.columns)):
+                    # Drop NaN rows at the end
+                    ticker_df = ticker_df.dropna(subset=['close'])
+                    if len(ticker_df) > 0:
+                        tickers_data[ticker] = ticker_df
             else:
                 # Multiple tickers: columns are MultiIndex (ticker, OHLCV)
-                # Flatten and separate by ticker
                 for ticker in symbols_list:
                     try:
                         ticker_df = df_raw[ticker].copy()
                         # Normalize column names to lowercase
                         ticker_df.columns = ticker_df.columns.str.lower()
-                        if not ticker_df.empty and ticker_df.notna().sum().sum() > 0:
-                            tickers_data[ticker] = ticker_df
-                    except KeyError:
+                        
+                        # Ensure required columns exist
+                        required_cols = {'open', 'high', 'low', 'close', 'volume'}
+                        if required_cols.issubset(set(ticker_df.columns)):
+                            # Drop NaN rows at the end
+                            ticker_df = ticker_df.dropna(subset=['close'])
+                            if len(ticker_df) > 0:
+                                tickers_data[ticker] = ticker_df
+                    except (KeyError, TypeError):
                         continue  # Skip if ticker not in data
             
             if not tickers_data:
-                st.error("No valid data for selected symbols.")
+                st.error(f"No valid data for selected symbols. Tried: {', '.join(symbols_list[:5])}")
                 st.stop()
             
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
+            import traceback
+            st.error(f"Debug: {traceback.format_exc()}")
             st.stop()
     
     with st.spinner("🔧 Scoring stocks..."):
