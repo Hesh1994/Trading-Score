@@ -172,6 +172,7 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
     with st.spinner("📥 Downloading data..."):
         try:
             # Download data
+            st.write(f"Downloading data for {len(symbols_list)} symbols from {start_date} to {end_date}...")
             df_raw = yf.download(
                 tickers=symbols_list,
                 start=start_date,
@@ -184,6 +185,9 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                 st.error("No data downloaded. Check your symbols and date range.")
                 st.stop()
             
+            st.write(f"Downloaded data shape: {df_raw.shape}")
+            st.write(f"Columns: {df_raw.columns.tolist()}")
+            
             # Prepare data for scoring (dictionary of {ticker: DataFrame})
             tickers_data = {}
             
@@ -193,34 +197,46 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
                 ticker_df = df_raw.copy()
                 ticker_df.columns = ticker_df.columns.str.lower()
                 
-                # Ensure required columns exist
-                required_cols = {'open', 'high', 'low', 'close', 'volume'}
-                if required_cols.issubset(set(ticker_df.columns)):
+                st.write(f"Single ticker {ticker} - columns after lowercase: {ticker_df.columns.tolist()}")
+                st.write(f"Data shape: {ticker_df.shape}, non-null values: {ticker_df.notna().sum().to_dict()}")
+                
+                # Check for required columns (case-insensitive)
+                cols_lower = {c.lower() for c in df_raw.columns}
+                if 'close' in cols_lower and 'open' in cols_lower and 'volume' in cols_lower:
                     # Drop NaN rows at the end
                     ticker_df = ticker_df.dropna(subset=['close'])
                     if len(ticker_df) > 0:
                         tickers_data[ticker] = ticker_df
+                        st.write(f"✅ {ticker}: {len(ticker_df)} valid rows")
             else:
                 # Multiple tickers: columns are MultiIndex (ticker, OHLCV)
+                st.write(f"Multiple tickers - data is MultiIndex")
                 for ticker in symbols_list:
                     try:
                         ticker_df = df_raw[ticker].copy()
-                        # Normalize column names to lowercase
                         ticker_df.columns = ticker_df.columns.str.lower()
                         
-                        # Ensure required columns exist
-                        required_cols = {'open', 'high', 'low', 'close', 'volume'}
-                        if required_cols.issubset(set(ticker_df.columns)):
+                        st.write(f"{ticker} - columns: {ticker_df.columns.tolist()}")
+                        
+                        # Check for required columns
+                        cols_lower = {c.lower() for c in ticker_df.columns}
+                        if 'close' in cols_lower and 'open' in cols_lower and 'volume' in cols_lower:
                             # Drop NaN rows at the end
                             ticker_df = ticker_df.dropna(subset=['close'])
                             if len(ticker_df) > 0:
                                 tickers_data[ticker] = ticker_df
-                    except (KeyError, TypeError):
-                        continue  # Skip if ticker not in data
+                                st.write(f"✅ {ticker}: {len(ticker_df)} valid rows")
+                        else:
+                            st.write(f"❌ {ticker}: missing required columns")
+                    except (KeyError, TypeError) as e:
+                        st.write(f"❌ {ticker}: {str(e)}")
+                        continue
             
             if not tickers_data:
                 st.error(f"No valid data for selected symbols. Tried: {', '.join(symbols_list[:5])}")
                 st.stop()
+            
+            st.success(f"✅ Successfully loaded data for {len(tickers_data)} symbols")
             
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
