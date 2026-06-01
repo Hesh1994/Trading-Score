@@ -150,50 +150,79 @@ def process_symbol_indicators(group, indicator_params, signal_weights, entry_sco
     
     # Technical Indicators with custom parameters
     if 'rsi' in indicator_params:
-        group['rsi'] = calculate_rsi_stacked(group, indicator_params['rsi']['period'])
-        group['rsi_mid'] = group['rsi'].rolling(window=indicator_params['rsi']['period']).mean()
+        try:
+            group['rsi'] = calculate_rsi_stacked(group, indicator_params['rsi']['period'])
+            if group['rsi'].notna().sum() > 0:  # Only calc if we have valid RSI values
+                group['rsi_mid'] = group['rsi'].rolling(window=indicator_params['rsi']['period']).mean()
+        except Exception as e:
+            pass  # Skip if calculation fails
     
     if 'sma_short' in indicator_params:
-        group['sma_short'] = calculate_sma_stacked(group, indicator_params['sma_short']['period'])
+        try:
+            group['sma_short'] = calculate_sma_stacked(group, indicator_params['sma_short']['period'])
+        except Exception as e:
+            pass
     
     if 'sma_long' in indicator_params:
-        group['sma_long'] = calculate_sma_stacked(group, indicator_params['sma_long']['period'])
+        try:
+            group['sma_long'] = calculate_sma_stacked(group, indicator_params['sma_long']['period'])
+        except Exception as e:
+            pass
     
     if 'ema_15' in indicator_params:
-        group['ema_15'] = calculate_ema_stacked(group, indicator_params['ema_15']['period'])
-        group['ema_manual'] = calculate_ema_manual_stacked(group, indicator_params['ema_15']['period'], indicator_params['ema_15']['period'])
+        try:
+            group['ema_15'] = calculate_ema_stacked(group, indicator_params['ema_15']['period'])
+            group['ema_manual'] = calculate_ema_manual_stacked(group, indicator_params['ema_15']['period'], indicator_params['ema_15']['period'])
+        except Exception as e:
+            pass
     
     if 'mfi' in indicator_params:
-        group['mfi'] = calculate_mfi_stacked(group, indicator_params['mfi']['period'])
-        group['mfi_mid'] = group['mfi'].rolling(window=indicator_params['mfi']['period']).mean()
+        try:
+            group['mfi'] = calculate_mfi_stacked(group, indicator_params['mfi']['period'])
+            if group['mfi'].notna().sum() > 0:
+                group['mfi_mid'] = group['mfi'].rolling(window=indicator_params['mfi']['period']).mean()
+        except Exception as e:
+            pass
     
     if 'stochastic' in indicator_params:
-        group['stoch_k'], group['stoch_d'] = calculate_stochastic_stacked(
-            group, 
-            indicator_params['stochastic']['k_period'], 
-            indicator_params['stochastic']['d_period']
-        )
+        try:
+            group['stoch_k'], group['stoch_d'] = calculate_stochastic_stacked(
+                group, 
+                indicator_params['stochastic']['k_period'], 
+                indicator_params['stochastic']['d_period']
+            )
+        except Exception as e:
+            pass
     
     if 'aroon' in indicator_params:
-        group['aroon_up'], group['aroon_down'], group['aroon_oscillator'] = calculate_aroon_stacked(
-            group, indicator_params['aroon']['period']
-        )
+        try:
+            group['aroon_up'], group['aroon_down'], group['aroon_oscillator'] = calculate_aroon_stacked(
+                group, indicator_params['aroon']['period']
+            )
+        except Exception as e:
+            pass
     
     if 'bollinger' in indicator_params:
-        (group['bb_upper'], group['bb_middle'], group['bb_lower'], 
-         group['bb_percent_b'], group['bb_bandwidth']) = calculate_bollinger_bands_stacked(
-            group, 
-            indicator_params['bollinger']['period'], 
-            indicator_params['bollinger']['std_dev']
-        )
+        try:
+            (group['bb_upper'], group['bb_middle'], group['bb_lower'], 
+             group['bb_percent_b'], group['bb_bandwidth']) = calculate_bollinger_bands_stacked(
+                group, 
+                indicator_params['bollinger']['period'], 
+                indicator_params['bollinger']['std_dev']
+            )
+        except Exception as e:
+            pass
     
     if 'macd' in indicator_params:
-        group['macd_line'], group['macd_signal'], group['macd_histogram'] = calculate_macd_stacked(
-            group, 
-            indicator_params['macd']['fast'], 
-            indicator_params['macd']['slow'], 
-            indicator_params['macd']['signal']
-        )
+        try:
+            group['macd_line'], group['macd_signal'], group['macd_histogram'] = calculate_macd_stacked(
+                group, 
+                indicator_params['macd']['fast'], 
+                indicator_params['macd']['slow'], 
+                indicator_params['macd']['signal']
+            )
+        except Exception as e:
+            pass
     
     # Trading Signals
     signal_cols = []
@@ -557,7 +586,7 @@ col1, col2 = st.sidebar.columns(2)
 with col1:
     start_date = st.date_input(
         "Start Date",
-        value=dt.date(2020, 1, 1),
+        value=dt.date.today() - dt.timedelta(days=365),
         min_value=dt.date(2010, 1, 1),
         max_value=dt.date.today()
     )
@@ -573,7 +602,7 @@ with col2:
 st.sidebar.subheader("🎯 Symbols")
 symbol_option = st.sidebar.selectbox(
     "Symbol Source",
-    ["S&P 500 (first 50)", "S&P 500 (all)", "Custom"]
+    ["Custom", "S&P 500 (first 20)", "S&P 500 (first 50)", "S&P 500 (all)"]
 )
 
 if symbol_option == "Custom":
@@ -582,6 +611,10 @@ if symbol_option == "Custom":
         value="AAPL,MSFT,GOOGL,AMZN,TSLA"
     )
     symbols_list = [s.strip().upper() for s in custom_symbols.split(",")]
+elif symbol_option == "S&P 500 (first 20)":
+    symbols_list = sp500_symbols[:20]
+elif symbol_option == "S&P 500 (first 50)":
+    symbols_list = sp500_symbols[:50]
 else:
     @st.cache_data
     def get_sp500_symbols():
@@ -602,7 +635,7 @@ else:
     if symbol_option == "S&P 500 (first 50)":
         symbols_list = sp500_symbols[:50]
     else:
-        symbols_list = sp500_symbols
+        symbols_list = sp500_symbols  # S&P 500 (all)
 
 # Technical Indicators Configuration
 st.sidebar.subheader("📊 Technical Indicators")
@@ -772,7 +805,7 @@ target_score_cols = st.sidebar.multiselect(
 score_history_days = st.sidebar.slider("Score History Days", 3, 14, 5)
 
 # Weekly Analysis Toggle
-use_weekly_analysis = st.sidebar.checkbox("Include Weekly Analysis", value=True)
+use_weekly_analysis = st.sidebar.checkbox("Include Weekly Analysis", value=False)
 
 # Main content area
 if st.button("🚀 Run Analysis", type="primary"):
@@ -788,8 +821,18 @@ if st.button("🚀 Run Analysis", type="primary"):
                 auto_adjust=False,
                 progress=False
             ).stack()
+            
+            # Validate downloaded data
+            if df.empty:
+                st.error("No data downloaded. Please check your symbols and date range.")
+                st.stop()
+                
             df.index.names = ['date', 'ticker']
             df.columns = df.columns.str.lower()
+            
+            # Remove rows with all NaN values
+            df = df.dropna(how='all')
+            
             # Download weekly data if needed
             if use_weekly_analysis:
                 dfw = yf.download(
@@ -802,6 +845,7 @@ if st.button("🚀 Run Analysis", type="primary"):
                 ).stack()
                 dfw.index.names = ['date', 'ticker']
                 dfw.columns = dfw.columns.str.lower()
+                dfw = dfw.dropna(how='all')
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
             st.stop()
