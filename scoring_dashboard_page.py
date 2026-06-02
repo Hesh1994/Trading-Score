@@ -145,25 +145,49 @@ if included_indicators:
         
         for param_key, param_value in params.items():
             if isinstance(param_value, int):
-                new_value = st.sidebar.slider(
+                new_value = st.sidebar.number_input(
                     param_key.replace('_', ' ').title(),
                     min_value=1,
-                    max_value=100,
                     value=param_value,
+                    step=1,
                     key=f"{selected_indicator}_{param_key}"
                 )
                 indicator_config[selected_indicator]['parameters'][param_key] = new_value
             elif isinstance(param_value, float):
-                new_value = st.sidebar.slider(
+                new_value = st.sidebar.number_input(
                     param_key.replace('_', ' ').title(),
-                    min_value=0.5,
-                    max_value=5.0,
+                    min_value=0.1,
                     value=param_value,
                     step=0.1,
                     key=f"{selected_indicator}_{param_key}"
                 )
                 indicator_config[selected_indicator]['parameters'][param_key] = new_value
         
+        # Buy / sell rules (threshold inputs) — RSI only for now
+        if selected_indicator == "rsi":
+            st.sidebar.write("Buy / Sell Rules:")
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                buy_thresh = st.sidebar.number_input(
+                    "Buy when RSI <",
+                    min_value=1.0,
+                    max_value=99.0,
+                    value=float(ind_config["buy_criteria"].get("threshold", 30)),
+                    step=1.0,
+                    key="rsi_buy_threshold",
+                )
+                indicator_config["rsi"]["buy_criteria"]["threshold"] = buy_thresh
+            with col2:
+                sell_thresh = st.sidebar.number_input(
+                    "Sell when RSI >",
+                    min_value=1.0,
+                    max_value=99.0,
+                    value=float(ind_config["sell_criteria"].get("threshold", 70)),
+                    step=1.0,
+                    key="rsi_sell_threshold",
+                )
+                indicator_config["rsi"]["sell_criteria"]["threshold"] = sell_thresh
+
         # Show buy/sell scores
         st.sidebar.write("Scoring:")
         col1, col2 = st.sidebar.columns(2)
