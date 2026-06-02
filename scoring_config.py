@@ -13,6 +13,7 @@ INDICATORS_CONFIG = {
     'rsi': {
         'enabled': True,
         'label': 'RSI (Relative Strength Index)',
+        'interval': 'daily',
         'parameters': {
             'period': 14,
             'buy_threshold': 50.0,      # Buy when RSI > this value
@@ -33,6 +34,7 @@ INDICATORS_CONFIG = {
     'sma': {
         'enabled': True,
         'label': 'SMA (Simple Moving Average)',
+        'interval': 'daily',
         'parameters': {
             'period_short': 15,
             'period_long': 45,
@@ -52,6 +54,7 @@ INDICATORS_CONFIG = {
     'ema': {
         'enabled': True,
         'label': 'EMA (Exponential Moving Average)',
+        'interval': 'daily',
         'parameters': {
             'period': 15,
         },
@@ -70,6 +73,7 @@ INDICATORS_CONFIG = {
     'mfi': {
         'enabled': True,
         'label': 'MFI (Money Flow Index)',
+        'interval': 'daily',
         'parameters': {
             'period': 14,
         },
@@ -88,6 +92,7 @@ INDICATORS_CONFIG = {
     'stochastic': {
         'enabled': True,
         'label': 'Stochastic Oscillator',
+        'interval': 'daily',
         'parameters': {
             'k_period': 14,
             'd_period': 3,
@@ -110,6 +115,7 @@ INDICATORS_CONFIG = {
     'aroon': {
         'enabled': True,
         'label': 'Aroon Indicator',
+        'interval': 'daily',
         'parameters': {
             'period': 25,
         },
@@ -130,6 +136,7 @@ INDICATORS_CONFIG = {
     'bollinger': {
         'enabled': True,
         'label': 'Bollinger Bands',
+        'interval': 'daily',
         'parameters': {
             'period': 20,
             'std_dev': 2.0,
@@ -149,6 +156,7 @@ INDICATORS_CONFIG = {
     'macd': {
         'enabled': True,
         'label': 'MACD (Moving Average Convergence Divergence)',
+        'interval': 'daily',
         'parameters': {
             'fast': 12,
             'slow': 26,

@@ -269,250 +269,243 @@ def evaluate_macd_criteria(macd_line, macd_signal, buy_criteria, sell_criteria):
 # MAIN SCORING FUNCTION
 # ============================================================================
 
-def score_stock(df, ticker, config=None, global_config=None):
+def score_stock(ticker, tickers_data_by_interval, config=None, global_config=None):
     """
-    Score a single stock based on enabled indicators and their criteria.
-    
+    Score a single stock. Each indicator uses the interval specified in its config.
+
     Args:
-        df: DataFrame with OHLCV data (columns: open, high, low, close, volume)
         ticker: Stock ticker symbol
-        config: Indicators configuration (defaults to INDICATORS_CONFIG)
-        global_config: Global scoring config (defaults to GLOBAL_CONFIG)
-    
-    Returns:
-        Dictionary with scoring results
+        tickers_data_by_interval: Dict of {interval: {ticker: DataFrame}}
+        config: Indicators configuration
+        global_config: Global scoring config
     """
     if config is None:
         config = INDICATORS_CONFIG
     if global_config is None:
         global_config = GLOBAL_CONFIG
-    
-    # Initialize result
+
     result = {
         'ticker': ticker,
         'buy_score': 0.0,
         'sell_score': 0.0,
         'signals': {},
     }
-    
-    if df.empty:
-        result['signal'] = 'HOLD'
-        result['net_score'] = 0.0
-        return result
-    
-    latest = df.iloc[-1]
-    
+
+    def get_df(ind_key):
+        interval = config[ind_key].get('interval', 'daily')
+        return tickers_data_by_interval.get(interval, {}).get(ticker)
+
     # ========== RSI ==========
     if config['rsi']['enabled']:
         try:
-            rsi = calculate_rsi(df, config['rsi']['parameters']['period'])
-            rsi_current = rsi.iloc[-1]
-            buy_trig, sell_trig = evaluate_rsi_criteria(
-                rsi_current,
-                config['rsi']['buy_criteria'],
-                config['rsi']['sell_criteria']
-            )
-            result['signals']['rsi'] = {
-                'value': round(rsi_current, 2) if pd.notna(rsi_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['rsi']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['rsi']['sell_score']
+            df = get_df('rsi')
+            if df is None or df.empty:
+                result['signals']['rsi'] = {'error': 'no data for interval'}
+            else:
+                rsi = calculate_rsi(df, config['rsi']['parameters']['period'])
+                rsi_current = rsi.iloc[-1]
+                buy_trig, sell_trig = evaluate_rsi_criteria(
+                    rsi_current,
+                    config['rsi']['buy_criteria'],
+                    config['rsi']['sell_criteria'],
+                    config['rsi']['parameters'],
+                )
+                result['signals']['rsi'] = {
+                    'value': round(rsi_current, 2) if pd.notna(rsi_current) else None,
+                    'buy': buy_trig,
+                    'sell': sell_trig,
+                }
+                if buy_trig:
+                    result['buy_score'] += config['rsi']['buy_score']
+                if sell_trig:
+                    result['sell_score'] += config['rsi']['sell_score']
         except Exception as e:
             result['signals']['rsi'] = {'error': str(e)}
-    
+
     # ========== SMA ==========
     if config['sma']['enabled']:
         try:
-            sma_short, sma_long = calculate_sma(
-                df,
-                config['sma']['parameters']['period_short'],
-                config['sma']['parameters']['period_long']
-            )
-            sma_short_current = sma_short.iloc[-1]
-            sma_long_current = sma_long.iloc[-1]
-            buy_trig, sell_trig = evaluate_sma_criteria(
-                sma_short_current,
-                sma_long_current,
-                config['sma']['buy_criteria'],
-                config['sma']['sell_criteria']
-            )
-            result['signals']['sma'] = {
-                'short': round(sma_short_current, 2) if pd.notna(sma_short_current) else None,
-                'long': round(sma_long_current, 2) if pd.notna(sma_long_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['sma']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['sma']['sell_score']
+            df = get_df('sma')
+            if df is None or df.empty:
+                result['signals']['sma'] = {'error': 'no data for interval'}
+            else:
+                sma_short, sma_long = calculate_sma(
+                    df,
+                    config['sma']['parameters']['period_short'],
+                    config['sma']['parameters']['period_long']
+                )
+                sma_short_current = sma_short.iloc[-1]
+                sma_long_current = sma_long.iloc[-1]
+                buy_trig, sell_trig = evaluate_sma_criteria(
+                    sma_short_current, sma_long_current,
+                    config['sma']['buy_criteria'], config['sma']['sell_criteria']
+                )
+                result['signals']['sma'] = {
+                    'short': round(sma_short_current, 2) if pd.notna(sma_short_current) else None,
+                    'long': round(sma_long_current, 2) if pd.notna(sma_long_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['sma']['buy_score']
+                if sell_trig: result['sell_score'] += config['sma']['sell_score']
         except Exception as e:
             result['signals']['sma'] = {'error': str(e)}
-    
+
     # ========== EMA ==========
     if config['ema']['enabled']:
         try:
-            ema = calculate_ema(df, config['ema']['parameters']['period'])
-            ema_current = ema.iloc[-1]
-            buy_trig, sell_trig = evaluate_ema_criteria(
-                latest['close'],
-                ema_current,
-                config['ema']['buy_criteria'],
-                config['ema']['sell_criteria']
-            )
-            result['signals']['ema'] = {
-                'value': round(ema_current, 2) if pd.notna(ema_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['ema']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['ema']['sell_score']
+            df = get_df('ema')
+            if df is None or df.empty:
+                result['signals']['ema'] = {'error': 'no data for interval'}
+            else:
+                ema = calculate_ema(df, config['ema']['parameters']['period'])
+                ema_current = ema.iloc[-1]
+                latest_close = df.iloc[-1]['close']
+                buy_trig, sell_trig = evaluate_ema_criteria(
+                    latest_close, ema_current,
+                    config['ema']['buy_criteria'], config['ema']['sell_criteria']
+                )
+                result['signals']['ema'] = {
+                    'value': round(ema_current, 2) if pd.notna(ema_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['ema']['buy_score']
+                if sell_trig: result['sell_score'] += config['ema']['sell_score']
         except Exception as e:
             result['signals']['ema'] = {'error': str(e)}
-    
+
     # ========== MFI ==========
     if config['mfi']['enabled']:
         try:
-            mfi = calculate_mfi(df, config['mfi']['parameters']['period'])
-            mfi_current = mfi.iloc[-1]
-            buy_trig, sell_trig = evaluate_mfi_criteria(
-                mfi_current,
-                config['mfi']['buy_criteria'],
-                config['mfi']['sell_criteria']
-            )
-            result['signals']['mfi'] = {
-                'value': round(mfi_current, 2) if pd.notna(mfi_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['mfi']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['mfi']['sell_score']
+            df = get_df('mfi')
+            if df is None or df.empty:
+                result['signals']['mfi'] = {'error': 'no data for interval'}
+            else:
+                mfi = calculate_mfi(df, config['mfi']['parameters']['period'])
+                mfi_current = mfi.iloc[-1]
+                buy_trig, sell_trig = evaluate_mfi_criteria(
+                    mfi_current,
+                    config['mfi']['buy_criteria'], config['mfi']['sell_criteria']
+                )
+                result['signals']['mfi'] = {
+                    'value': round(mfi_current, 2) if pd.notna(mfi_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['mfi']['buy_score']
+                if sell_trig: result['sell_score'] += config['mfi']['sell_score']
         except Exception as e:
             result['signals']['mfi'] = {'error': str(e)}
-    
+
     # ========== STOCHASTIC ==========
     if config['stochastic']['enabled']:
         try:
-            stoch_k, stoch_d = calculate_stochastic(
-                df,
-                config['stochastic']['parameters']['k_period'],
-                config['stochastic']['parameters']['d_period'],
-                config['stochastic']['parameters']['smooth_k']
-            )
-            stoch_k_current = stoch_k.iloc[-1]
-            stoch_d_current = stoch_d.iloc[-1]
-            buy_trig, sell_trig = evaluate_stochastic_criteria(
-                stoch_k_current,
-                stoch_d_current,
-                config['stochastic']['buy_criteria'],
-                config['stochastic']['sell_criteria']
-            )
-            result['signals']['stochastic'] = {
-                'k': round(stoch_k_current, 2) if pd.notna(stoch_k_current) else None,
-                'd': round(stoch_d_current, 2) if pd.notna(stoch_d_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['stochastic']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['stochastic']['sell_score']
+            df = get_df('stochastic')
+            if df is None or df.empty:
+                result['signals']['stochastic'] = {'error': 'no data for interval'}
+            else:
+                stoch_k, stoch_d = calculate_stochastic(
+                    df,
+                    config['stochastic']['parameters']['k_period'],
+                    config['stochastic']['parameters']['d_period'],
+                    config['stochastic']['parameters']['smooth_k']
+                )
+                stoch_k_current = stoch_k.iloc[-1]
+                stoch_d_current = stoch_d.iloc[-1]
+                buy_trig, sell_trig = evaluate_stochastic_criteria(
+                    stoch_k_current, stoch_d_current,
+                    config['stochastic']['buy_criteria'], config['stochastic']['sell_criteria']
+                )
+                result['signals']['stochastic'] = {
+                    'k': round(stoch_k_current, 2) if pd.notna(stoch_k_current) else None,
+                    'd': round(stoch_d_current, 2) if pd.notna(stoch_d_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['stochastic']['buy_score']
+                if sell_trig: result['sell_score'] += config['stochastic']['sell_score']
         except Exception as e:
             result['signals']['stochastic'] = {'error': str(e)}
-    
+
     # ========== AROON ==========
     if config['aroon']['enabled']:
         try:
-            aroon_up, aroon_down = calculate_aroon(df, config['aroon']['parameters']['period'])
-            aroon_up_current = aroon_up.iloc[-1]
-            aroon_down_current = aroon_down.iloc[-1]
-            buy_trig, sell_trig = evaluate_aroon_criteria(
-                aroon_up_current,
-                aroon_down_current,
-                config['aroon']['buy_criteria'],
-                config['aroon']['sell_criteria']
-            )
-            result['signals']['aroon'] = {
-                'up': round(aroon_up_current, 2) if pd.notna(aroon_up_current) else None,
-                'down': round(aroon_down_current, 2) if pd.notna(aroon_down_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['aroon']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['aroon']['sell_score']
+            df = get_df('aroon')
+            if df is None or df.empty:
+                result['signals']['aroon'] = {'error': 'no data for interval'}
+            else:
+                aroon_up, aroon_down = calculate_aroon(df, config['aroon']['parameters']['period'])
+                aroon_up_current = aroon_up.iloc[-1]
+                aroon_down_current = aroon_down.iloc[-1]
+                buy_trig, sell_trig = evaluate_aroon_criteria(
+                    aroon_up_current, aroon_down_current,
+                    config['aroon']['buy_criteria'], config['aroon']['sell_criteria']
+                )
+                result['signals']['aroon'] = {
+                    'up': round(aroon_up_current, 2) if pd.notna(aroon_up_current) else None,
+                    'down': round(aroon_down_current, 2) if pd.notna(aroon_down_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['aroon']['buy_score']
+                if sell_trig: result['sell_score'] += config['aroon']['sell_score']
         except Exception as e:
             result['signals']['aroon'] = {'error': str(e)}
-    
+
     # ========== BOLLINGER BANDS ==========
     if config['bollinger']['enabled']:
         try:
-            bb_upper, bb_middle, bb_lower = calculate_bollinger(
-                df,
-                config['bollinger']['parameters']['period'],
-                config['bollinger']['parameters']['std_dev']
-            )
-            bb_upper_current = bb_upper.iloc[-1]
-            bb_lower_current = bb_lower.iloc[-1]
-            buy_trig, sell_trig = evaluate_bollinger_criteria(
-                latest['close'],
-                bb_upper_current,
-                bb_lower_current,
-                config['bollinger']['buy_criteria'],
-                config['bollinger']['sell_criteria']
-            )
-            result['signals']['bollinger'] = {
-                'upper': round(bb_upper_current, 2) if pd.notna(bb_upper_current) else None,
-                'lower': round(bb_lower_current, 2) if pd.notna(bb_lower_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['bollinger']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['bollinger']['sell_score']
+            df = get_df('bollinger')
+            if df is None or df.empty:
+                result['signals']['bollinger'] = {'error': 'no data for interval'}
+            else:
+                bb_upper, bb_middle, bb_lower = calculate_bollinger(
+                    df,
+                    config['bollinger']['parameters']['period'],
+                    config['bollinger']['parameters']['std_dev']
+                )
+                bb_upper_current = bb_upper.iloc[-1]
+                bb_lower_current = bb_lower.iloc[-1]
+                latest_close = df.iloc[-1]['close']
+                buy_trig, sell_trig = evaluate_bollinger_criteria(
+                    latest_close, bb_upper_current, bb_lower_current,
+                    config['bollinger']['buy_criteria'], config['bollinger']['sell_criteria']
+                )
+                result['signals']['bollinger'] = {
+                    'upper': round(bb_upper_current, 2) if pd.notna(bb_upper_current) else None,
+                    'lower': round(bb_lower_current, 2) if pd.notna(bb_lower_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['bollinger']['buy_score']
+                if sell_trig: result['sell_score'] += config['bollinger']['sell_score']
         except Exception as e:
             result['signals']['bollinger'] = {'error': str(e)}
-    
+
     # ========== MACD ==========
     if config['macd']['enabled']:
         try:
-            macd_line, macd_signal = calculate_macd(
-                df,
-                config['macd']['parameters']['fast'],
-                config['macd']['parameters']['slow'],
-                config['macd']['parameters']['signal']
-            )
-            macd_line_current = macd_line.iloc[-1]
-            macd_signal_current = macd_signal.iloc[-1]
-            buy_trig, sell_trig = evaluate_macd_criteria(
-                macd_line_current,
-                macd_signal_current,
-                config['macd']['buy_criteria'],
-                config['macd']['sell_criteria']
-            )
-            result['signals']['macd'] = {
-                'line': round(macd_line_current, 2) if pd.notna(macd_line_current) else None,
-                'signal': round(macd_signal_current, 2) if pd.notna(macd_signal_current) else None,
-                'buy': buy_trig,
-                'sell': sell_trig,
-            }
-            if buy_trig:
-                result['buy_score'] += config['macd']['buy_score']
-            if sell_trig:
-                result['sell_score'] += config['macd']['sell_score']
+            df = get_df('macd')
+            if df is None or df.empty:
+                result['signals']['macd'] = {'error': 'no data for interval'}
+            else:
+                macd_line, macd_signal = calculate_macd(
+                    df,
+                    config['macd']['parameters']['fast'],
+                    config['macd']['parameters']['slow'],
+                    config['macd']['parameters']['signal']
+                )
+                macd_line_current = macd_line.iloc[-1]
+                macd_signal_current = macd_signal.iloc[-1]
+                buy_trig, sell_trig = evaluate_macd_criteria(
+                    macd_line_current, macd_signal_current,
+                    config['macd']['buy_criteria'], config['macd']['sell_criteria']
+                )
+                result['signals']['macd'] = {
+                    'line': round(macd_line_current, 2) if pd.notna(macd_line_current) else None,
+                    'signal': round(macd_signal_current, 2) if pd.notna(macd_signal_current) else None,
+                    'buy': buy_trig, 'sell': sell_trig,
+                }
+                if buy_trig: result['buy_score'] += config['macd']['buy_score']
+                if sell_trig: result['sell_score'] += config['macd']['sell_score']
         except Exception as e:
             result['signals']['macd'] = {'error': str(e)}
-    
+
     # ========== FINAL CLASSIFICATION ==========
     signal, net_score = classify_signal(
         result['buy_score'],
@@ -520,24 +513,25 @@ def score_stock(df, ticker, config=None, global_config=None):
         global_config['buy_threshold'],
         global_config['sell_threshold']
     )
-    
+
     result['signal'] = signal
     result['net_score'] = round(net_score, 2)
     result['buy_score'] = round(result['buy_score'], 2)
     result['sell_score'] = round(result['sell_score'], 2)
-    
+
     return result
 
 
-def score_universe(tickers_data, config=None, global_config=None):
+def score_universe(tickers_data_by_interval, config=None, global_config=None):
     """
-    Score multiple stocks.
-    
+    Score multiple stocks across potentially different intervals per indicator.
+
     Args:
-        tickers_data: Dict of {ticker: DataFrame} with OHLCV data
+        tickers_data_by_interval: Dict of {interval: {ticker: DataFrame}}
+                                  e.g. {'daily': {'AAPL': df, ...}, 'weekly': {...}}
         config: Indicators configuration
         global_config: Global scoring config
-    
+
     Returns:
         List of result dicts, sorted by net_score descending
     """
@@ -545,13 +539,17 @@ def score_universe(tickers_data, config=None, global_config=None):
         config = INDICATORS_CONFIG
     if global_config is None:
         global_config = GLOBAL_CONFIG
-    
+
+    # Collect all tickers across all intervals
+    all_tickers = set()
+    for interval_data in tickers_data_by_interval.values():
+        all_tickers.update(interval_data.keys())
+
     results = []
-    for ticker, df in tickers_data.items():
-        result = score_stock(df, ticker, config, global_config)
+    for ticker in all_tickers:
+        result = score_stock(ticker, tickers_data_by_interval, config, global_config)
         results.append(result)
-    
-    # Sort by net_score descending
+
     results.sort(key=lambda x: x['net_score'], reverse=True)
     return results
 
@@ -559,10 +557,10 @@ def score_universe(tickers_data, config=None, global_config=None):
 def results_to_dataframe(results):
     """
     Convert scoring results to a display DataFrame.
-    
+
     Args:
         results: List of result dicts from score_universe
-    
+
     Returns:
         DataFrame ready for display or export
     """
@@ -576,6 +574,6 @@ def results_to_dataframe(results):
             'Net Score': r['net_score'],
         }
         display_data.append(row)
-    
+
     df = pd.DataFrame(display_data)
     return df.sort_values('Net Score', ascending=False).reset_index(drop=True)

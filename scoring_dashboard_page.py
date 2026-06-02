@@ -138,7 +138,20 @@ if included_indicators:
     if selected_indicator:
         ind_config = indicator_config[selected_indicator]
         st.sidebar.write(f"**{ind_config['label']}**")
-        
+
+        # Interval selector per indicator
+        interval_options = ["Daily", "Weekly", "Monthly"]
+        current_interval = ind_config.get('interval', 'daily').capitalize()
+        if current_interval not in interval_options:
+            current_interval = "Daily"
+        selected_interval = st.sidebar.selectbox(
+            "Interval",
+            interval_options,
+            index=interval_options.index(current_interval),
+            key=f"{selected_indicator}_interval"
+        )
+        indicator_config[selected_indicator]['interval'] = selected_interval.lower()
+
         # Show parameters
         st.sidebar.write("Parameters:")
         params = ind_config['parameters'].copy()
@@ -218,63 +231,67 @@ if included_indicators:
 if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True):
     with st.spinner("📥 Downloading data..."):
         try:
-            # Download data
-            df_raw = yf.download(
-                tickers=symbols_list,
-                start=start_date,
-                end=end_date,
-                progress=False,
-                auto_adjust=False
-            )
-            
-            if df_raw.empty:
-                st.error("No data downloaded. Check your symbols and date range.")
-                st.stop()
-            
-            # Prepare data for scoring (dictionary of {ticker: DataFrame})
-            tickers_data = {}
-            
-            if len(symbols_list) == 1:
-                # Single ticker: columns are simple (Adj Close, Close, High, Low, Open, Volume)
-                ticker = symbols_list[0]
-                ticker_df = df_raw.copy()
-                ticker_df.columns = ticker_df.columns.str.lower()
-                
-                # Check for required columns (case-insensitive)
-                cols_lower = {c.lower() for c in df_raw.columns}
-                if 'close' in cols_lower and 'open' in cols_lower and 'volume' in cols_lower:
-                    # Drop NaN rows at the end
+            INTERVAL_YF = {'daily': '1d', 'weekly': '1wk', 'monthly': '1mo'}
+
+            # Collect unique intervals needed by enabled indicators
+            intervals_needed = set()
+            for ind_key, cfg in indicator_config.items():
+                if cfg.get('enabled'):
+                    intervals_needed.add(cfg.get('interval', 'daily'))
+
+            tickers_data_by_interval = {}
+
+            for interval in intervals_needed:
+                df_raw = yf.download(
+                    tickers=symbols_list,
+                    start=start_date,
+                    end=end_date,
+                    interval=INTERVAL_YF[interval],
+                    progress=False,
+                    auto_adjust=False
+                )
+
+                if df_raw.empty:
+                    continue
+
+                tickers_dict = {}
+
+                if len(symbols_list) == 1:
+                    ticker = symbols_list[0]
+                    ticker_df = df_raw.copy()
+                    ticker_df.columns = ticker_df.columns.str.lower()
                     ticker_df = ticker_df.dropna(subset=['close'])
                     if len(ticker_df) > 0:
-                        tickers_data[ticker] = ticker_df
-            else:
-                # Multiple tickers: columns are MultiIndex (PriceType, Ticker)
-                # Extract ticker data from MultiIndex columns
-                for ticker in symbols_list:
-                    try:
-                        # For MultiIndex, ticker is at level 1 (second level)
-                        # Access using df_raw.xs(ticker, level=1, axis=1)
-                        ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
-                        ticker_df.columns = ticker_df.columns.str.lower()
-                        
-                        # Check for required columns
-                        cols_lower = {c.lower() for c in ticker_df.columns}
-                        if 'close' in cols_lower and 'open' in cols_lower and 'volume' in cols_lower:
-                            # Drop NaN rows at the end
+                        tickers_dict[ticker] = ticker_df
+                else:
+                    for ticker in symbols_list:
+                        try:
+                            ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
+                            ticker_df.columns = ticker_df.columns.str.lower()
                             ticker_df = ticker_df.dropna(subset=['close'])
                             if len(ticker_df) > 0:
-                                tickers_data[ticker] = ticker_df
-                    except (KeyError, TypeError):
-                        continue
-            
-            if not tickers_data:
+                                tickers_dict[ticker] = ticker_df
+                        except (KeyError, TypeError):
+                            continue
+
+                tickers_data_by_interval[interval] = tickers_dict
+
+            if not tickers_data_by_interval:
+                st.error("No data downloaded. Check your symbols and date range.")
+                st.stop()
+
+            # Check at least one ticker has data
+            all_tickers_found = set()
+            for d in tickers_data_by_interval.values():
+                all_tickers_found.update(d.keys())
+            if not all_tickers_found:
                 st.error(f"No valid data for selected symbols. Tried: {', '.join(symbols_list[:5])}")
                 st.stop()
-            
+
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
             st.stop()
-    
+
     with st.spinner("🔧 Scoring stocks..."):
         try:
             # Prepare global config
@@ -285,7 +302,7 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
             }
             
             # Score all stocks
-            results = score_universe(tickers_data, indicator_config, global_config)
+            results = score_universe(tickers_data_by_interval, indicator_config, global_config)
             
             if not results:
                 st.error("No scoring results generated.")
