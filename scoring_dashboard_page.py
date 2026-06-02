@@ -168,7 +168,7 @@ if included_indicators:
             st.sidebar.write("Buy / Sell Rules:")
             col1, col2 = st.sidebar.columns(2)
             with col1:
-                buy_thresh = st.sidebar.number_input(
+                buy_thresh = st.number_input(
                     "Buy when RSI <",
                     min_value=1.0,
                     max_value=99.0,
@@ -178,7 +178,7 @@ if included_indicators:
                 )
                 indicator_config["rsi"]["buy_criteria"]["threshold"] = buy_thresh
             with col2:
-                sell_thresh = st.sidebar.number_input(
+                sell_thresh = st.number_input(
                     "Sell when RSI >",
                     min_value=1.0,
                     max_value=99.0,
