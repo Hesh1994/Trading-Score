@@ -642,6 +642,9 @@ def results_to_dataframe(results):
             'Sell Score': r['sell_score'],
             'Net Score': r['net_score'],
         }
+        fg_sig = r.get('signals', {}).get('fear_greed', {})
+        if 'value' in fg_sig:
+            row['Fear & Greed'] = fg_sig['value']
         display_data.append(row)
 
     df = pd.DataFrame(display_data)

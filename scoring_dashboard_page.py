@@ -418,14 +418,10 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
             st.metric("Hold Signals", hold_count, delta_color="off")
 
         st.header("🎯 Scoring Results")
-        st.dataframe(
-            results_df.style.format({
-                "Buy Score":  "{:.2f}",
-                "Sell Score": "{:.2f}",
-                "Net Score":  "{:.2f}",
-            }),
-            use_container_width=True
-        )
+        fmt = {"Buy Score": "{:.2f}", "Sell Score": "{:.2f}", "Net Score": "{:.2f}"}
+        if "Fear & Greed" in results_df.columns:
+            fmt["Fear & Greed"] = "{:.1f}"
+        st.dataframe(results_df.style.format(fmt), use_container_width=True)
     
     # Detailed signals per stock
     st.header("🔍 Detailed Signals per Stock")
