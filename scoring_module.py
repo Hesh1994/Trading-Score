@@ -35,8 +35,8 @@ def calculate_sma(df, period_short=15, period_long=45):
 
 
 def calculate_ema(df, period=15):
-    """Calculate EMA"""
-    return df['close'].ewm(span=period, adjust=False).mean()
+    """Calculate SMA (replaces EMA)"""
+    return df['close'].rolling(window=period).mean()
 
 
 def calculate_mfi(df, period=14):

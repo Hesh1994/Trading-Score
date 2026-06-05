@@ -53,7 +53,7 @@ INDICATORS_CONFIG = {
     
     'ema': {
         'enabled': True,
-        'label': 'EMA (Exponential Moving Average)',
+        'label': 'SMA',
         'interval': 'daily',
         'parameters': {
             'period': 15,
