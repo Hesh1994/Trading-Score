@@ -20,11 +20,11 @@ INDICATORS_CONFIG = {
             'sell_threshold': 50.0,     # Sell when RSI < this value
         },
         'buy_criteria': {
-            'operator': '>',  # RSI > buy_threshold
+            'operator': '<',  # RSI < buy_threshold (oversold)
             'threshold_type': 'parameter',  # Use buy_threshold from parameters
         },
         'sell_criteria': {
-            'operator': '<',  # RSI < sell_threshold
+            'operator': '>',  # RSI > sell_threshold (overbought)
             'threshold_type': 'parameter',  # Use sell_threshold from parameters
         },
         'buy_score': 1.0,
