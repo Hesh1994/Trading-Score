@@ -236,8 +236,8 @@ def classify_signal(buy_score, sell_score, buy_threshold, sell_threshold):
     Returns:
         Tuple of (signal, net_score) where signal is 'BUY', 'SELL', or 'HOLD'
     """
-    net_score = buy_score - sell_score
-    
+    net_score = buy_score + sell_score
+
     if buy_score >= buy_threshold and buy_score > sell_score:
         return 'BUY', net_score
     elif sell_score >= sell_threshold and sell_score > buy_score:
