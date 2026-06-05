@@ -7,7 +7,6 @@ Uses only numpy and pandas (no external indicator libraries required).
 import pandas as pd
 import numpy as np
 import warnings
-import requests
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG, classify_signal
 
 warnings.filterwarnings('ignore')
@@ -266,24 +265,47 @@ def evaluate_macd_criteria(macd_line, macd_signal, buy_criteria, sell_criteria):
     return buy_triggered, sell_triggered
 
 
-def fetch_fear_greed():
+def calculate_fear_greed(df, window=252):
     """
-    Fetch the current CNN Fear & Greed Index.
-    Returns (value: float, rating: str) or (None, None) on failure.
-    Scale: 0 = Extreme Fear, 100 = Extreme Greed.
+    Calculate a per-ticker Fear & Greed Index (0 = Extreme Fear, 100 = Extreme Greed)
+    from OHLCV data using four equally-weighted, percentile-ranked components:
+      1. Momentum       — price vs 125-day MA, percentile-ranked in trailing window
+      2. RSI(14)        — already 0..100
+      3. Volatility     — 20-day realized vol, INVERTED (high vol = fear)
+      4. Volume breadth — up-day vol / total vol, percentile-ranked
+    Returns a Series aligned to df.index.
+    Requires at least `window` (default 252) bars for a meaningful reading.
     """
-    try:
-        r = requests.get(
-            'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
-            timeout=10
+    def pct_rank(series):
+        return series.rolling(window).apply(
+            lambda x: (x.argsort().argsort()[-1] / (len(x) - 1)) * 100,
+            raw=False
         )
-        r.raise_for_status()
-        data = r.json()
-        fg = data['fear_and_greed']
-        return float(fg['score']), str(fg['rating'])
-    except Exception:
-        return None, None
+
+    close = df['close']
+    vol   = df['volume']
+
+    # 1) Momentum: price vs 125-day MA
+    momentum       = close / close.rolling(125).mean() - 1
+    momentum_score = pct_rank(momentum)
+
+    # 2) RSI(14)
+    delta = close.diff()
+    gain  = delta.clip(lower=0).rolling(14).mean()
+    loss  = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi   = 100 - 100 / (1 + gain / (loss + 1e-10))
+
+    # 3) Volatility (inverted — high vol = fear)
+    vol_realized     = close.pct_change().rolling(20).std()
+    volatility_score = 100 - pct_rank(vol_realized)
+
+    # 4) Volume breadth: up-day vol fraction
+    up_vol        = vol.where(close.diff() > 0, 0).rolling(20).sum()
+    dn_vol        = vol.where(close.diff() < 0, 0).rolling(20).sum()
+    breadth_score = pct_rank(up_vol / (up_vol + dn_vol + 1e-10))
+
+    fg = pd.concat([momentum_score, rsi, volatility_score, breadth_score], axis=1).mean(axis=1)
+    return fg
 
 
 # ============================================================================
@@ -530,23 +552,26 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
     # ========== FEAR & GREED INDEX ==========
     if config.get('fear_greed', {}).get('enabled'):
         try:
-            fg_value = global_config.get('fg_value')
-            fg_rating = global_config.get('fg_rating', '')
-            if fg_value is None:
-                result['signals']['fear_greed'] = {'error': 'could not fetch Fear & Greed index'}
+            df = get_df('fear_greed')
+            if df is None or df.empty:
+                result['signals']['fear_greed'] = {'error': 'no data for interval'}
             else:
-                fear_thresh  = config['fear_greed']['parameters'].get('fear_threshold',  30.0)
-                greed_thresh = config['fear_greed']['parameters'].get('greed_threshold', 70.0)
-                buy_trig  = fg_value < fear_thresh
-                sell_trig = fg_value > greed_thresh
-                result['signals']['fear_greed'] = {
-                    'value':  round(fg_value, 1),
-                    'rating': fg_rating,
-                    'buy':    buy_trig,
-                    'sell':   sell_trig,
-                }
-                if buy_trig:  result['buy_score']  += config['fear_greed']['buy_score']
-                if sell_trig: result['sell_score'] += config['fear_greed']['sell_score']
+                fg = calculate_fear_greed(df)
+                fg_current = fg.iloc[-1]
+                if pd.isna(fg_current):
+                    result['signals']['fear_greed'] = {'error': 'insufficient data (need 252+ bars)'}
+                else:
+                    fear_thresh  = config['fear_greed']['parameters'].get('fear_threshold',  30.0)
+                    greed_thresh = config['fear_greed']['parameters'].get('greed_threshold', 70.0)
+                    buy_trig  = fg_current < fear_thresh
+                    sell_trig = fg_current > greed_thresh
+                    result['signals']['fear_greed'] = {
+                        'value': round(float(fg_current), 1),
+                        'buy':   buy_trig,
+                        'sell':  sell_trig,
+                    }
+                    if buy_trig:  result['buy_score']  += config['fear_greed']['buy_score']
+                    if sell_trig: result['sell_score'] += config['fear_greed']['sell_score']
         except Exception as e:
             result['signals']['fear_greed'] = {'error': str(e)}
 
@@ -583,13 +608,6 @@ def score_universe(tickers_data_by_interval, config=None, global_config=None):
         config = INDICATORS_CONFIG
     if global_config is None:
         global_config = GLOBAL_CONFIG
-
-    # Fetch Fear & Greed Index once for all tickers (market-wide indicator)
-    global_config = dict(global_config)   # shallow copy so we don't mutate the caller's dict
-    if config.get('fear_greed', {}).get('enabled'):
-        fg_value, fg_rating = fetch_fear_greed()
-        global_config['fg_value']  = fg_value
-        global_config['fg_rating'] = fg_rating
 
     # Collect all tickers across all intervals
     all_tickers = set()

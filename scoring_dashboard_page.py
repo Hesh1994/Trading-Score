@@ -152,21 +152,20 @@ if included_indicators:
         ind_cfg = indicator_config[selected_indicator]
         st.sidebar.write(f"**{ind_cfg['label']}**")
 
-        # Interval selector per indicator (not applicable for Fear & Greed)
-        if selected_indicator != 'fear_greed':
-            interval_options = ["Daily", "Weekly", "Monthly"]
-            current_interval = ind_cfg.get('interval', 'daily').capitalize()
-            if current_interval not in interval_options:
-                current_interval = "Daily"
-            selected_interval = st.sidebar.selectbox(
-                "Interval",
-                interval_options,
-                index=interval_options.index(current_interval),
-                key=f"{selected_indicator}_interval"
-            )
-            indicator_config[selected_indicator]['interval'] = selected_interval.lower()
-        else:
-            st.sidebar.info("ℹ️ Fear & Greed is fetched live from CNN — no interval needed.")
+        # Interval selector per indicator
+        interval_options = ["Daily", "Weekly", "Monthly"]
+        current_interval = ind_cfg.get('interval', 'daily').capitalize()
+        if current_interval not in interval_options:
+            current_interval = "Daily"
+        selected_interval = st.sidebar.selectbox(
+            "Interval",
+            interval_options,
+            index=interval_options.index(current_interval),
+            key=f"{selected_indicator}_interval"
+        )
+        indicator_config[selected_indicator]['interval'] = selected_interval.lower()
+        if selected_indicator == 'fear_greed':
+            st.sidebar.caption("Calculated from OHLCV data (needs 252+ bars). Components: Momentum, RSI, Volatility, Volume Breadth.")
 
         # Show parameters
         st.sidebar.write("Parameters:")
@@ -339,17 +338,23 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
     # ========== DISPLAY RESULTS ==========
     st.success("✅ Scoring complete!")
 
-    # Show Fear & Greed Index value if enabled
+    # Fear & Greed summary across all tickers (per-ticker calculation)
     if indicator_config.get('fear_greed', {}).get('enabled'):
-        fg_sig = (results[0]['signals'].get('fear_greed', {}) if results else {})
-        fg_val = fg_sig.get('value')
-        fg_rating = fg_sig.get('rating', '')
-        if fg_val is not None:
-            fg_color = "inverse" if fg_val < 30 else ("normal" if fg_val > 70 else "off")
-            fg_label = f"Fear & Greed Index — {fg_rating}"
-            st.metric(fg_label, f"{fg_val:.0f} / 100", delta_color=fg_color)
-        else:
-            st.warning("Could not fetch Fear & Greed Index from CNN API.")
+        fg_vals = [
+            r['signals']['fear_greed']['value']
+            for r in results
+            if 'fear_greed' in r['signals'] and 'value' in r['signals']['fear_greed']
+        ]
+        if fg_vals:
+            fear_thresh  = indicator_config['fear_greed']['parameters'].get('fear_threshold',  30.0)
+            greed_thresh = indicator_config['fear_greed']['parameters'].get('greed_threshold', 70.0)
+            n_fear   = sum(v < fear_thresh  for v in fg_vals)
+            n_greed  = sum(v > greed_thresh for v in fg_vals)
+            avg_fg   = sum(fg_vals) / len(fg_vals)
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Avg Fear & Greed", f"{avg_fg:.1f} / 100")
+            col_b.metric(f"Fear Zone (< {fear_thresh:.0f})",   n_fear)
+            col_c.metric(f"Greed Zone (> {greed_thresh:.0f})", n_greed)
 
     # Detect RSI-only mode
     enabled_indicators = [k for k, v in indicator_config.items() if v.get("enabled")]
