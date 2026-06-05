@@ -319,35 +319,77 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
     
     # ========== DISPLAY RESULTS ==========
     st.success("✅ Scoring complete!")
-    
-    # Summary metrics
-    st.header("📊 Summary")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    buy_count = len(results_df[results_df['Signal'] == 'BUY'])
-    sell_count = len(results_df[results_df['Signal'] == 'SELL'])
-    hold_count = len(results_df[results_df['Signal'] == 'HOLD'])
-    
-    with col1:
-        st.metric("Total Stocks Analyzed", len(results_df))
-    with col2:
-        st.metric("Buy Signals", buy_count, delta_color="off")
-    with col3:
-        st.metric("Sell Signals", sell_count, delta_color="off")
-    with col4:
-        st.metric("Hold Signals", hold_count, delta_color="off")
-    
-    # Results table
-    st.header("🎯 Scoring Results")
-    
-    st.dataframe(
-        results_df.style.format({
-            'Buy Score': '{:.2f}',
-            'Sell Score': '{:.2f}',
-            'Net Score': '{:.2f}'
-        }),
-        use_container_width=True
-    )
+
+    # Detect RSI-only mode
+    enabled_indicators = [k for k, v in indicator_config.items() if v.get("enabled")]
+    rsi_only = enabled_indicators == ["rsi"]
+
+    if rsi_only:
+        # ── RSI-only: two tables (Oversold / Overbought) ──────────────────────
+        rsi_buy_thresh  = indicator_config["rsi"]["parameters"].get("buy_threshold",  30)
+        rsi_sell_thresh = indicator_config["rsi"]["parameters"].get("sell_threshold", 70)
+
+        oversold_rows   = []
+        overbought_rows = []
+        for r in results:
+            rsi_sig = r["signals"].get("rsi", {})
+            rsi_val = rsi_sig.get("value")
+            if rsi_sig.get("buy"):
+                oversold_rows.append({"Ticker": r["ticker"], "RSI": rsi_val})
+            if rsi_sig.get("sell"):
+                overbought_rows.append({"Ticker": r["ticker"], "RSI": rsi_val})
+
+        df_oversold   = pd.DataFrame(oversold_rows).sort_values("RSI", ascending=True).reset_index(drop=True)
+        df_overbought = pd.DataFrame(overbought_rows).sort_values("RSI", ascending=False).reset_index(drop=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Analyzed", len(results))
+        with col2:
+            st.metric("Oversold", len(df_oversold))
+
+        st.subheader(f"📉 Oversold — RSI < {rsi_buy_thresh}")
+        if df_oversold.empty:
+            st.info("No oversold stocks found.")
+        else:
+            st.dataframe(
+                df_oversold.style.format({"RSI": "{:.2f}"}),
+                use_container_width=True, hide_index=True
+            )
+
+        st.subheader(f"📈 Overbought — RSI > {rsi_sell_thresh}")
+        if df_overbought.empty:
+            st.info("No overbought stocks found.")
+        else:
+            st.dataframe(
+                df_overbought.style.format({"RSI": "{:.2f}"}),
+                use_container_width=True, hide_index=True
+            )
+
+    else:
+        # ── Multi-indicator: original scoring table ───────────────────────────
+        col1, col2, col3, col4 = st.columns(4)
+        buy_count  = len(results_df[results_df["Signal"] == "BUY"])
+        sell_count = len(results_df[results_df["Signal"] == "SELL"])
+        hold_count = len(results_df[results_df["Signal"] == "HOLD"])
+        with col1:
+            st.metric("Total Stocks Analyzed", len(results_df))
+        with col2:
+            st.metric("Buy Signals",  buy_count,  delta_color="off")
+        with col3:
+            st.metric("Sell Signals", sell_count, delta_color="off")
+        with col4:
+            st.metric("Hold Signals", hold_count, delta_color="off")
+
+        st.header("🎯 Scoring Results")
+        st.dataframe(
+            results_df.style.format({
+                "Buy Score":  "{:.2f}",
+                "Sell Score": "{:.2f}",
+                "Net Score":  "{:.2f}",
+            }),
+            use_container_width=True
+        )
     
     # Detailed signals per stock
     st.header("🔍 Detailed Signals per Stock")
