@@ -173,6 +173,26 @@ INDICATORS_CONFIG = {
         'buy_score': 1.5,
         'sell_score': 1.5,
     },
+
+    'fear_greed': {
+        'enabled': False,
+        'label': 'Fear & Greed Index (CNN)',
+        'interval': 'daily',   # not used — fetched live from CNN API
+        'parameters': {
+            'fear_threshold': 30.0,    # Buy signal when index < this (extreme fear)
+            'greed_threshold': 70.0,   # Sell signal when index > this (extreme greed)
+        },
+        'buy_criteria': {
+            'operator': '<',           # index < fear_threshold → buy (fear = opportunity)
+            'threshold_type': 'parameter',
+        },
+        'sell_criteria': {
+            'operator': '>',           # index > greed_threshold → sell (greed = caution)
+            'threshold_type': 'parameter',
+        },
+        'buy_score': 1.0,
+        'sell_score': 1.0,
+    },
 }
 
 # ============================================================================

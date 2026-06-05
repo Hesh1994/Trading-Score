@@ -7,6 +7,7 @@ Uses only numpy and pandas (no external indicator libraries required).
 import pandas as pd
 import numpy as np
 import warnings
+import requests
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG, classify_signal
 
 warnings.filterwarnings('ignore')
@@ -254,15 +255,35 @@ def evaluate_macd_criteria(macd_line, macd_signal, buy_criteria, sell_criteria):
     """Evaluate MACD crossover criteria"""
     buy_triggered = False
     sell_triggered = False
-    
+
     if pd.notna(macd_line) and pd.notna(macd_signal):
         if buy_criteria.get('direction') == 'above':
             buy_triggered = macd_line > macd_signal
-        
+
         if sell_criteria.get('direction') == 'below':
             sell_triggered = macd_line < macd_signal
-    
+
     return buy_triggered, sell_triggered
+
+
+def fetch_fear_greed():
+    """
+    Fetch the current CNN Fear & Greed Index.
+    Returns (value: float, rating: str) or (None, None) on failure.
+    Scale: 0 = Extreme Fear, 100 = Extreme Greed.
+    """
+    try:
+        r = requests.get(
+            'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
+            timeout=10
+        )
+        r.raise_for_status()
+        data = r.json()
+        fg = data['fear_and_greed']
+        return float(fg['score']), str(fg['rating'])
+    except Exception:
+        return None, None
 
 
 # ============================================================================
@@ -506,6 +527,29 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
         except Exception as e:
             result['signals']['macd'] = {'error': str(e)}
 
+    # ========== FEAR & GREED INDEX ==========
+    if config.get('fear_greed', {}).get('enabled'):
+        try:
+            fg_value = global_config.get('fg_value')
+            fg_rating = global_config.get('fg_rating', '')
+            if fg_value is None:
+                result['signals']['fear_greed'] = {'error': 'could not fetch Fear & Greed index'}
+            else:
+                fear_thresh  = config['fear_greed']['parameters'].get('fear_threshold',  30.0)
+                greed_thresh = config['fear_greed']['parameters'].get('greed_threshold', 70.0)
+                buy_trig  = fg_value < fear_thresh
+                sell_trig = fg_value > greed_thresh
+                result['signals']['fear_greed'] = {
+                    'value':  round(fg_value, 1),
+                    'rating': fg_rating,
+                    'buy':    buy_trig,
+                    'sell':   sell_trig,
+                }
+                if buy_trig:  result['buy_score']  += config['fear_greed']['buy_score']
+                if sell_trig: result['sell_score'] += config['fear_greed']['sell_score']
+        except Exception as e:
+            result['signals']['fear_greed'] = {'error': str(e)}
+
     # ========== FINAL CLASSIFICATION ==========
     signal, net_score = classify_signal(
         result['buy_score'],
@@ -539,6 +583,13 @@ def score_universe(tickers_data_by_interval, config=None, global_config=None):
         config = INDICATORS_CONFIG
     if global_config is None:
         global_config = GLOBAL_CONFIG
+
+    # Fetch Fear & Greed Index once for all tickers (market-wide indicator)
+    global_config = dict(global_config)   # shallow copy so we don't mutate the caller's dict
+    if config.get('fear_greed', {}).get('enabled'):
+        fg_value, fg_rating = fetch_fear_greed()
+        global_config['fg_value']  = fg_value
+        global_config['fg_rating'] = fg_rating
 
     # Collect all tickers across all intervals
     all_tickers = set()

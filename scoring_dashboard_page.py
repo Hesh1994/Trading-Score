@@ -147,18 +147,21 @@ if included_indicators:
         ind_cfg = indicator_config[selected_indicator]
         st.sidebar.write(f"**{ind_cfg['label']}**")
 
-        # Interval selector per indicator
-        interval_options = ["Daily", "Weekly", "Monthly"]
-        current_interval = ind_cfg.get('interval', 'daily').capitalize()
-        if current_interval not in interval_options:
-            current_interval = "Daily"
-        selected_interval = st.sidebar.selectbox(
-            "Interval",
-            interval_options,
-            index=interval_options.index(current_interval),
-            key=f"{selected_indicator}_interval"
-        )
-        indicator_config[selected_indicator]['interval'] = selected_interval.lower()
+        # Interval selector per indicator (not applicable for Fear & Greed)
+        if selected_indicator != 'fear_greed':
+            interval_options = ["Daily", "Weekly", "Monthly"]
+            current_interval = ind_cfg.get('interval', 'daily').capitalize()
+            if current_interval not in interval_options:
+                current_interval = "Daily"
+            selected_interval = st.sidebar.selectbox(
+                "Interval",
+                interval_options,
+                index=interval_options.index(current_interval),
+                key=f"{selected_indicator}_interval"
+            )
+            indicator_config[selected_indicator]['interval'] = selected_interval.lower()
+        else:
+            st.sidebar.info("ℹ️ Fear & Greed is fetched live from CNN — no interval needed.")
 
         # Show parameters
         st.sidebar.write("Parameters:")
@@ -330,6 +333,18 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
     
     # ========== DISPLAY RESULTS ==========
     st.success("✅ Scoring complete!")
+
+    # Show Fear & Greed Index value if enabled
+    if indicator_config.get('fear_greed', {}).get('enabled'):
+        fg_sig = (results[0]['signals'].get('fear_greed', {}) if results else {})
+        fg_val = fg_sig.get('value')
+        fg_rating = fg_sig.get('rating', '')
+        if fg_val is not None:
+            fg_color = "inverse" if fg_val < 30 else ("normal" if fg_val > 70 else "off")
+            fg_label = f"Fear & Greed Index — {fg_rating}"
+            st.metric(fg_label, f"{fg_val:.0f} / 100", delta_color=fg_color)
+        else:
+            st.warning("Could not fetch Fear & Greed Index from CNN API.")
 
     # Detect RSI-only mode
     enabled_indicators = [k for k, v in indicator_config.items() if v.get("enabled")]
