@@ -115,6 +115,11 @@ import copy as _copy
 # We keep our own mirror dict so all values survive across reruns.
 if 'ind_config_store' not in st.session_state:
     st.session_state['ind_config_store'] = _copy.deepcopy(dict(INDICATORS_CONFIG))
+else:
+    # Merge any indicators added since the store was first created
+    for _k, _v in INDICATORS_CONFIG.items():
+        if _k not in st.session_state['ind_config_store']:
+            st.session_state['ind_config_store'][_k] = _copy.deepcopy(_v)
 
 # Start each run from the persisted store, not from the hard-coded defaults.
 indicator_config = _copy.deepcopy(st.session_state['ind_config_store'])
