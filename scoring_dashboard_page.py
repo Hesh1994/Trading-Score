@@ -339,8 +339,8 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
             if rsi_sig.get("sell"):
                 overbought_rows.append({"Ticker": r["ticker"], "RSI": rsi_val})
 
-        df_oversold   = pd.DataFrame(oversold_rows).sort_values("RSI", ascending=True).reset_index(drop=True)
-        df_overbought = pd.DataFrame(overbought_rows).sort_values("RSI", ascending=False).reset_index(drop=True)
+        df_oversold   = pd.DataFrame(oversold_rows,   columns=["Ticker", "RSI"]).sort_values("RSI", ascending=True).reset_index(drop=True)
+        df_overbought = pd.DataFrame(overbought_rows, columns=["Ticker", "RSI"]).sort_values("RSI", ascending=False).reset_index(drop=True)
 
         col1, col2 = st.columns(2)
         with col1:
