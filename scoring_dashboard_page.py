@@ -107,10 +107,40 @@ with col2:
 # Indicator Configuration
 st.sidebar.subheader("📈 Indicators to Include")
 
-# Initialize indicator_config
+# Initialize indicator_config — read persisted session_state values first
+# so switching between indicators in the selectbox never resets previous inputs.
 indicator_config = {}
 for ind_key, ind_config in INDICATORS_CONFIG.items():
     indicator_config[ind_key] = ind_config.copy()
+
+    # Parameters
+    for param_key in ind_config['parameters']:
+        ss_key = f"{ind_key}_{param_key}"
+        if ss_key in st.session_state:
+            indicator_config[ind_key]['parameters'][param_key] = st.session_state[ss_key]
+
+    # RSI buy/sell thresholds (stored separately)
+    if ind_key == 'rsi':
+        if 'rsi_buy_threshold' in st.session_state:
+            indicator_config['rsi']['parameters']['buy_threshold'] = st.session_state['rsi_buy_threshold']
+        if 'rsi_sell_threshold' in st.session_state:
+            indicator_config['rsi']['parameters']['sell_threshold'] = st.session_state['rsi_sell_threshold']
+
+    # Buy / sell scores
+    for score_key in ('buy_score', 'sell_score'):
+        ss_key = f"{ind_key}_{score_key}"
+        if ss_key in st.session_state:
+            indicator_config[ind_key][score_key] = st.session_state[ss_key]
+
+    # Interval
+    ss_key = f"{ind_key}_interval"
+    if ss_key in st.session_state:
+        indicator_config[ind_key]['interval'] = st.session_state[ss_key].lower()
+
+    # Enabled checkbox
+    ss_key = f"{ind_key}_included"
+    if ss_key in st.session_state:
+        indicator_config[ind_key]['enabled'] = st.session_state[ss_key]
 
 # Section 1: Select which indicators to include
 included_indicators = {}
