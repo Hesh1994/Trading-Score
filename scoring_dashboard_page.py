@@ -107,74 +107,49 @@ with col2:
 # Indicator Configuration
 st.sidebar.subheader("📈 Indicators to Include")
 
-# Initialize indicator_config — deep-copy defaults then restore any values
-# already set by the user (persisted in session_state by widget keys).
-# This ensures switching between indicators never resets previous inputs.
 import copy as _copy
 
-indicator_config = {}
-for ind_key, ind_config in INDICATORS_CONFIG.items():
-    indicator_config[ind_key] = _copy.deepcopy(ind_config)
+# ── Session-state-backed config store ─────────────────────────────────────────
+# Streamlit removes widget keys from session_state when their widgets are not
+# rendered (e.g. when switching to a different indicator in the selectbox).
+# We keep our own mirror dict so all values survive across reruns.
+if 'ind_config_store' not in st.session_state:
+    st.session_state['ind_config_store'] = _copy.deepcopy(dict(INDICATORS_CONFIG))
 
-    # ── Parameters (covers all indicators, all param keys) ────────────────
-    for param_key in ind_config['parameters']:
-        ss_key = f"{ind_key}_{param_key}"
-        if ss_key in st.session_state:
-            indicator_config[ind_key]['parameters'][param_key] = st.session_state[ss_key]
-
-    # ── RSI dedicated threshold inputs (separate widget keys) ─────────────
-    if ind_key == 'rsi':
-        if 'rsi_buy_threshold' in st.session_state:
-            indicator_config['rsi']['parameters']['buy_threshold'] = st.session_state['rsi_buy_threshold']
-        if 'rsi_sell_threshold' in st.session_state:
-            indicator_config['rsi']['parameters']['sell_threshold'] = st.session_state['rsi_sell_threshold']
-
-    # ── Buy / sell scores (all indicators) ───────────────────────────────
-    for score_key in ('buy_score', 'sell_score'):
-        ss_key = f"{ind_key}_{score_key}"
-        if ss_key in st.session_state:
-            indicator_config[ind_key][score_key] = st.session_state[ss_key]
-
-    # ── Interval selector (all indicators) ───────────────────────────────
-    ss_key = f"{ind_key}_interval"
-    if ss_key in st.session_state:
-        indicator_config[ind_key]['interval'] = st.session_state[ss_key].lower()
-
-    # ── Enabled checkbox (all indicators) ────────────────────────────────
-    ss_key = f"{ind_key}_included"
-    if ss_key in st.session_state:
-        indicator_config[ind_key]['enabled'] = st.session_state[ss_key]
+# Start each run from the persisted store, not from the hard-coded defaults.
+indicator_config = _copy.deepcopy(st.session_state['ind_config_store'])
 
 # Section 1: Select which indicators to include
 included_indicators = {}
-for ind_key, ind_config in INDICATORS_CONFIG.items():
+for ind_key in list(INDICATORS_CONFIG.keys()):
+    cfg = indicator_config[ind_key]
     included = st.sidebar.checkbox(
-        ind_config['label'],
-        value=ind_config['enabled'],
+        cfg['label'],
+        value=cfg['enabled'],
         key=f"{ind_key}_included"
     )
     indicator_config[ind_key]['enabled'] = included
     if included:
-        included_indicators[ind_key] = ind_config
+        included_indicators[ind_key] = indicator_config[ind_key]
 
 # Section 2: Configure selected indicators
 if included_indicators:
     st.sidebar.subheader("⚙️ Configure Indicators")
-    
+
     selected_indicator = st.sidebar.selectbox(
         "Select indicator to configure",
         options=list(included_indicators.keys()),
-        format_func=lambda x: included_indicators[x]['label'],
+        format_func=lambda x: indicator_config[x]['label'],
         key="indicator_selector"
     )
-    
+
     if selected_indicator:
-        ind_config = indicator_config[selected_indicator]
-        st.sidebar.write(f"**{ind_config['label']}**")
+        ind_cfg = indicator_config[selected_indicator]
+        st.sidebar.write(f"**{ind_cfg['label']}**")
 
         # Interval selector per indicator
         interval_options = ["Daily", "Weekly", "Monthly"]
-        current_interval = ind_config.get('interval', 'daily').capitalize()
+        current_interval = ind_cfg.get('interval', 'daily').capitalize()
         if current_interval not in interval_options:
             current_interval = "Daily"
         selected_interval = st.sidebar.selectbox(
@@ -187,8 +162,8 @@ if included_indicators:
 
         # Show parameters
         st.sidebar.write("Parameters:")
-        params = ind_config['parameters'].copy()
-        
+        params = ind_cfg['parameters'].copy()
+
         for param_key, param_value in params.items():
             # buy_threshold / sell_threshold for RSI are handled by the dedicated block below
             if selected_indicator == "rsi" and param_key in ("buy_threshold", "sell_threshold"):
@@ -197,7 +172,7 @@ if included_indicators:
                 new_value = st.sidebar.number_input(
                     param_key.replace('_', ' ').title(),
                     min_value=1,
-                    value=param_value,
+                    value=int(param_value),
                     step=1,
                     key=f"{selected_indicator}_{param_key}"
                 )
@@ -206,12 +181,12 @@ if included_indicators:
                 new_value = st.sidebar.number_input(
                     param_key.replace('_', ' ').title(),
                     min_value=0.1,
-                    value=param_value,
+                    value=float(param_value),
                     step=0.1,
                     key=f"{selected_indicator}_{param_key}"
                 )
                 indicator_config[selected_indicator]['parameters'][param_key] = new_value
-        
+
         # Buy / sell rules (threshold inputs) — RSI only for now
         if selected_indicator == "rsi":
             st.sidebar.write("Buy / Sell Rules:")
@@ -221,7 +196,7 @@ if included_indicators:
                     "Oversold threshold (<)",
                     min_value=1.0,
                     max_value=99.0,
-                    value=float(ind_config["parameters"].get("buy_threshold", 30.0)),
+                    value=float(ind_cfg["parameters"].get("buy_threshold", 30.0)),
                     step=1.0,
                     key="rsi_buy_threshold",
                 )
@@ -231,7 +206,7 @@ if included_indicators:
                     "Overbought threshold (>)",
                     min_value=1.0,
                     max_value=99.0,
-                    value=float(ind_config["parameters"].get("sell_threshold", 70.0)),
+                    value=float(ind_cfg["parameters"].get("sell_threshold", 70.0)),
                     step=1.0,
                     key="rsi_sell_threshold",
                 )
@@ -243,7 +218,7 @@ if included_indicators:
         with col1:
             buy_score = st.number_input(
                 "Buy Score",
-                value=float(ind_config['buy_score']),
+                value=float(ind_cfg['buy_score']),
                 step=0.5,
                 key=f"{selected_indicator}_buy_score"
             )
@@ -251,11 +226,14 @@ if included_indicators:
         with col2:
             sell_score = st.number_input(
                 "Sell Score",
-                value=float(ind_config['sell_score']),
+                value=float(ind_cfg['sell_score']),
                 step=0.5,
                 key=f"{selected_indicator}_sell_score"
             )
             indicator_config[selected_indicator]['sell_score'] = sell_score
+
+# ── Persist the updated config for the next rerun ─────────────────────────────
+st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 
 # ============================================================================
 # MAIN CONTENT
