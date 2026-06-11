@@ -5,11 +5,19 @@ and presents a ranked table with per-ticker drill-down.
 """
 
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # find canslim_module
+# Add repo root to path so canslim_module is importable from the pages/ subdirectory
+_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
 import streamlit as st
 import pandas as pd
-from canslim_module import score_canslim_universe
+
+try:
+    from canslim_module import score_canslim_universe
+except ImportError as _e:
+    st.error(f"Cannot import canslim_module: {_e}\nMake sure canslim_module.py is in the repo root.")
+    st.stop()
 
 # ============================================================================
 # PAGE CONFIG
