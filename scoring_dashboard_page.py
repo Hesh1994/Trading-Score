@@ -23,6 +23,139 @@ st.set_page_config(
     layout="wide"
 )
 
+# ── Page navigation ──────────────────────────────────────────────────────────
+page = st.sidebar.selectbox(
+    "📌 Navigate",
+    ["📊 Technical Analysis Scoring", "📈 CANSLIM Scoring"],
+    key="main_page_selector"
+)
+st.sidebar.divider()
+
+# ============================================================================
+# PAGE: CANSLIM SCORING  (rendered first; st.stop() prevents TA code from running)
+# ============================================================================
+if page == "📈 CANSLIM Scoring":
+    from canslim_module import score_canslim_universe
+
+    def _pct(val, d=1):
+        return f"{val*100:.{d}f}%" if val is not None else "—"
+
+    def _traffic(met):
+        return "✅" if met is True else ("❌" if met is False else "⚠️ no data")
+
+    def _fmt_criterion(label, val):
+        if "Acceleration" in label:
+            return ("✅ TRUE" if val is True else ("❌ FALSE" if val is False else "no data"))
+        return _pct(val)
+
+    st.title("📈 CANSLIM Multi-Ticker Scoring & Ranking")
+    st.caption(
+        "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
+        "Data via yfinance — needs at least 8 quarters / 6 years of history."
+    )
+
+    st.sidebar.subheader("🎯 Tickers")
+    ticker_input = st.sidebar.text_area(
+        "Enter tickers (comma-separated)",
+        value="AAPL, MSFT, GOOGL, NVDA, AMZN",
+        height=100,
+        key="canslim_tickers"
+    )
+    st.sidebar.markdown(
+        "**Criteria (10 pts each)**\n"
+        "- Recent Qtr EPS YoY > 20%\n"
+        "- EPS Acceleration (3 Qtrs)\n"
+        "- EPS 3Y Avg Growth > 25%\n"
+        "- EPS 5Y Avg Growth > 25%\n"
+        "- Recent Qtr Revenue YoY > 25%\n"
+        "- Avg Revenue Growth (3Q) > 25%\n"
+        "- Pretax Income Annual > 15%\n"
+        "- Net Income Annual > 25%\n"
+        "- ROE YoY Growth > 17%\n"
+        "- Institutional Ownership > 35%"
+    )
+    run_canslim = st.sidebar.button("🚀 Run CANSLIM Analysis", type="primary",
+                                    use_container_width=True, key="run_canslim")
+
+    if run_canslim:
+        symbols = [s.strip().upper() for s in ticker_input.replace("\n", ",").split(",") if s.strip()]
+        if not symbols:
+            st.warning("Enter at least one ticker symbol.")
+        else:
+            with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
+                results = score_canslim_universe(symbols)
+
+            # ── Ranked summary table ─────────────────────────────────────
+            st.subheader("🏆 Ranked Scoring Table")
+            rows, rank, prev = [], 1, None
+            for i, r in enumerate(results):
+                if r['score'] != prev:
+                    rank = i + 1
+                rows.append({'Rank': rank, 'Ticker': r['symbol'],
+                             'Total Score (/100)': r['score'],
+                             'Criteria Met': f"{r['criteria_met']} / 10",
+                             'Data Gaps': r['data_gaps']})
+                prev = r['score']
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            # ── Per-ticker detailed breakdown ────────────────────────────
+            st.subheader("🔍 Detailed Breakdown")
+            for r in results:
+                sym = r['symbol']
+                with st.expander(f"{sym}  —  {r['score']}/100  |  {r['criteria_met']}/10 criteria  |  {r['data_gaps']} gap(s)"):
+                    m = r['metrics']
+                    lq = r['q_dates'][0] if r['q_dates'] else "—"
+                    la = r['a_dates'][0] if r['a_dates'] else "—"
+
+                    # Metrics table
+                    st.markdown("**Computed Metrics**")
+                    st.dataframe(pd.DataFrame([
+                        ("#1-4",  "EPS YoY Growth Q4/Q3/Q2/Q1",
+                         f"{_pct(m.get('eps_gr_q4'))} / {_pct(m.get('eps_gr_q3'))} / {_pct(m.get('eps_gr_q2'))} / {_pct(m.get('eps_gr_q1'))}", lq),
+                        ("#3",   "EPS Acceleration (3 Qtrs)",   _fmt_criterion("Acceleration", m.get('eps_accel')), lq),
+                        ("#4",   "EPS 3Y Avg Annual Growth",    _pct(m.get('eps_3y_avg')), la),
+                        ("#5",   "EPS 5Y Avg Annual Growth",    _pct(m.get('eps_5y_avg')), la),
+                        ("#6",   "Revenue YoY Growth Q4",       _pct(m.get('rev_gr_q4')), lq),
+                        ("#7",   "Avg Revenue Growth (Q2-Q4)",  _pct(m.get('rev_3q_avg')), lq),
+                        ("#8",   "Pretax Income Annual Growth", _pct(m.get('pretax_ann_gr')), la),
+                        ("#9",   "Net Income Annual Growth",    _pct(m.get('ni_ann_gr')), la),
+                        ("#10a", "ROE Q4 (latest)",             _pct(m.get('roe_q4')), lq),
+                        ("#10b", "ROE YoY Growth",              _pct(m.get('roe_yoy_gr')), lq),
+                        ("#11",  "Institutional Ownership",     _pct(m.get('inst_pct')), "latest"),
+                    ], columns=["#", "Metric", "Value", "Period"]),
+                    use_container_width=True, hide_index=True)
+
+                    # Scoring table
+                    st.markdown("**Scoring Criteria**")
+                    score_rows = [{'Criterion': sd['Criterion'],
+                                   'Value': _fmt_criterion(sd['Criterion'], sd['Value']),
+                                   'Threshold': sd['Threshold'],
+                                   'Points': sd['Points'],
+                                   'Status': _traffic(sd['Met'])}
+                                  for sd in r['score_details']]
+                    st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
+
+                    st.metric(f"Total CANSLIM Score — {sym}", f"{r['score']} / 100")
+
+                    # Quarterly trend
+                    st.markdown("**Last 4 Quarters — YoY Growth Trend**")
+                    q_labels = ["Q1 (oldest)", "Q2", "Q3", "Q4 (latest)"]
+                    trend = [{'Quarter': q_labels[i],
+                              'EPS YoY': _pct(r['eps_gr_series'][i] if i < len(r['eps_gr_series']) else None),
+                              'Revenue YoY': _pct(r['rev_gr_series'][i] if i < len(r['rev_gr_series']) else None)}
+                             for i in range(4)]
+                    st.dataframe(pd.DataFrame(trend), use_container_width=True, hide_index=True)
+
+                    if r['errors']:
+                        st.caption("⚠️ Data gaps: " + " · ".join(r['errors']))
+    else:
+        st.info("👆 Enter tickers in the sidebar and click **Run CANSLIM Analysis** to start.")
+
+    st.stop()   # ← prevents the Technical Analysis code below from running
+
+# ============================================================================
+# PAGE: TECHNICAL ANALYSIS SCORING
+# ============================================================================
 st.title("📊 Technical Analysis Stock Scoring System")
 
 # ============================================================================
