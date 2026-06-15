@@ -293,23 +293,23 @@ def _fmp_get(endpoint, api_key, params=None):
 
 def fetch_canslim_data_fmp(symbol, api_key):
     """
-    Fetch CANSLIM data from Financial Modeling Prep API.
+    Fetch all CANSLIM data exclusively from FMP (no yfinance dependency).
+    Requires a paid FMP plan for institutional-holder endpoint.
     Returns data in the same format as fetch_canslim_data() (most-recent first).
-    Institutional ownership falls back to yfinance (FMP premium required).
     """
     sym = symbol.upper()
     data = {'symbol': sym, 'errors': []}
 
-    # ── Quarterly income statement ───────────────────────────────────────
+    # ── Quarterly income statement (12 quarters = 3 years) ───────────────
     try:
         q_inc = _fmp_get(f"income-statement/{sym}", api_key,
                          {'period': 'quarter', 'limit': 12})
         if q_inc:
             data['q_eps']    = [d.get('epsdiluted') or d.get('eps') for d in q_inc]
-            data['q_rev']    = [d.get('revenue')           for d in q_inc]
-            data['q_pretax'] = [d.get('incomeBeforeTax')   for d in q_inc]
-            data['q_ni']     = [d.get('netIncome')         for d in q_inc]
-            data['q_dates']  = [d.get('date', '')          for d in q_inc]
+            data['q_rev']    = [d.get('revenue')         for d in q_inc]
+            data['q_pretax'] = [d.get('incomeBeforeTax') for d in q_inc]
+            data['q_ni']     = [d.get('netIncome')       for d in q_inc]
+            data['q_dates']  = [d.get('date', '')        for d in q_inc]
         else:
             data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
             data['errors'].append('FMP: no quarterly income data')
@@ -317,7 +317,7 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
         data['errors'].append(f'FMP quarterly income: {e}')
 
-    # ── Quarterly balance sheet (BVPS) ───────────────────────────────────
+    # ── Quarterly balance sheet (BVPS, 12 quarters) ──────────────────────
     try:
         q_bs = _fmp_get(f"balance-sheet-statement/{sym}", api_key,
                         {'period': 'quarter', 'limit': 12})
@@ -330,7 +330,7 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data['q_bvps'] = None
         data['errors'].append(f'FMP balance sheet: {e}')
 
-    # ── Annual income statement ───────────────────────────────────────────
+    # ── Annual income statement (6 years) ────────────────────────────────
     try:
         a_inc = _fmp_get(f"income-statement/{sym}", api_key, {'limit': 6})
         if a_inc:
@@ -345,19 +345,23 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
         data['errors'].append(f'FMP annual income: {e}')
 
-    # ── Institutional ownership (yfinance fallback) ───────────────────────
+    # ── Institutional ownership (FMP institutional-holder + profile) ──────
     try:
-        info = yf.Ticker(sym).info or {}
-        pct = info.get('institutionPercentHeld') or info.get('heldPercentInstitutions')
-        if pct is not None:
-            pct = float(pct)
-            data['inst_pct'] = pct / 100 if pct > 1 else pct
+        # Total shares outstanding from company profile
+        profile = _fmp_get(f"profile/{sym}", api_key)
+        shares_out = float(profile[0]['sharesOutstanding']) if profile else None
+
+        # Sum shares held by all reported institutional holders
+        holders = _fmp_get(f"institutional-holder/{sym}", api_key)
+        if holders and shares_out:
+            total_inst = sum(float(h.get('shares') or 0) for h in holders)
+            data['inst_pct'] = total_inst / shares_out
         else:
             data['inst_pct'] = None
-            data['errors'].append('institutional ownership unavailable')
+            data['errors'].append('FMP: institutional ownership unavailable')
     except Exception as e:
         data['inst_pct'] = None
-        data['errors'].append(f'institutional ownership: {e}')
+        data['errors'].append(f'FMP institutional ownership: {e}')
 
     return data
 
