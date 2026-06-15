@@ -7,9 +7,12 @@ Fetches fundamental data via yfinance and scores each ticker on the
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
 import warnings
 
 warnings.filterwarnings('ignore')
+
+FMP_BASE = "https://financialmodelingprep.com/api/v3"
 
 
 # ============================================================================
@@ -43,14 +46,20 @@ def _get_row(df, candidates):
 
 
 def _v(series, idx):
-    """Value at position idx (0 = most-recent column). Returns None if missing/NaN."""
+    """Value at position idx (0 = most-recent). Handles pandas Series and plain lists."""
     if series is None:
         return None
-    vals = series.values
+    vals = series if isinstance(series, (list, tuple)) else series.values
     if idx < 0 or idx >= len(vals):
         return None
     v = vals[idx]
-    return float(v) if (v is not None and not (isinstance(v, float) and np.isnan(v))) else None
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if np.isnan(f) else f
+    except (TypeError, ValueError):
+        return None
 
 
 # ============================================================================
@@ -265,9 +274,102 @@ def compute_canslim(data):
     }
 
 
-def score_canslim_universe(symbols):
+# ============================================================================
+# FMP DATA FETCHING
+# ============================================================================
+
+def _fmp_get(endpoint, api_key, params=None):
+    """Single FMP API request. Raises on HTTP error or API error message."""
+    p = {'apikey': api_key}
+    if params:
+        p.update(params)
+    r = requests.get(f"{FMP_BASE}/{endpoint}", params=p, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    if isinstance(data, dict) and 'Error Message' in data:
+        raise ValueError(data['Error Message'])
+    return data
+
+
+def fetch_canslim_data_fmp(symbol, api_key):
     """
-    Score a list of tickers. Returns list of result dicts sorted by score descending.
+    Fetch CANSLIM data from Financial Modeling Prep API.
+    Returns data in the same format as fetch_canslim_data() (most-recent first).
+    Institutional ownership falls back to yfinance (FMP premium required).
+    """
+    sym = symbol.upper()
+    data = {'symbol': sym, 'errors': []}
+
+    # ── Quarterly income statement ───────────────────────────────────────
+    try:
+        q_inc = _fmp_get(f"income-statement/{sym}", api_key,
+                         {'period': 'quarter', 'limit': 12})
+        if q_inc:
+            data['q_eps']    = [d.get('epsdiluted') or d.get('eps') for d in q_inc]
+            data['q_rev']    = [d.get('revenue')           for d in q_inc]
+            data['q_pretax'] = [d.get('incomeBeforeTax')   for d in q_inc]
+            data['q_ni']     = [d.get('netIncome')         for d in q_inc]
+            data['q_dates']  = [d.get('date', '')          for d in q_inc]
+        else:
+            data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
+            data['errors'].append('FMP: no quarterly income data')
+    except Exception as e:
+        data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
+        data['errors'].append(f'FMP quarterly income: {e}')
+
+    # ── Quarterly balance sheet (BVPS) ───────────────────────────────────
+    try:
+        q_bs = _fmp_get(f"balance-sheet-statement/{sym}", api_key,
+                        {'period': 'quarter', 'limit': 12})
+        if q_bs:
+            data['q_bvps'] = [d.get('bookValuePerShare') for d in q_bs]
+        else:
+            data['q_bvps'] = None
+            data['errors'].append('FMP: no quarterly balance sheet data')
+    except Exception as e:
+        data['q_bvps'] = None
+        data['errors'].append(f'FMP balance sheet: {e}')
+
+    # ── Annual income statement ───────────────────────────────────────────
+    try:
+        a_inc = _fmp_get(f"income-statement/{sym}", api_key, {'limit': 6})
+        if a_inc:
+            data['a_eps']    = [d.get('epsdiluted') or d.get('eps') for d in a_inc]
+            data['a_pretax'] = [d.get('incomeBeforeTax') for d in a_inc]
+            data['a_ni']     = [d.get('netIncome')       for d in a_inc]
+            data['a_dates']  = [d.get('date', '')        for d in a_inc]
+        else:
+            data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
+            data['errors'].append('FMP: no annual income data')
+    except Exception as e:
+        data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
+        data['errors'].append(f'FMP annual income: {e}')
+
+    # ── Institutional ownership (yfinance fallback) ───────────────────────
+    try:
+        info = yf.Ticker(sym).info or {}
+        pct = info.get('institutionPercentHeld') or info.get('heldPercentInstitutions')
+        if pct is not None:
+            pct = float(pct)
+            data['inst_pct'] = pct / 100 if pct > 1 else pct
+        else:
+            data['inst_pct'] = None
+            data['errors'].append('institutional ownership unavailable')
+    except Exception as e:
+        data['inst_pct'] = None
+        data['errors'].append(f'institutional ownership: {e}')
+
+    return data
+
+
+# ============================================================================
+# UNIVERSE SCORING
+# ============================================================================
+
+def score_canslim_universe(symbols, fmp_api_key=None):
+    """
+    Score a list of tickers. Pass fmp_api_key to use FMP instead of yfinance.
+    Returns list of result dicts sorted by score descending.
     """
     results = []
     for sym in symbols:
@@ -275,7 +377,10 @@ def score_canslim_universe(symbols):
         if not sym:
             continue
         try:
-            raw    = fetch_canslim_data(sym)
+            if fmp_api_key:
+                raw = fetch_canslim_data_fmp(sym, fmp_api_key)
+            else:
+                raw = fetch_canslim_data(sym)
             scored = compute_canslim(raw)
         except Exception as e:
             scored = {

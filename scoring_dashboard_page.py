@@ -54,6 +54,19 @@ if page == "📈 CANSLIM Scoring":
         "Data via yfinance — needs at least 8 quarters / 6 years of history."
     )
 
+    st.sidebar.subheader("🔑 Data Source")
+    fmp_key = st.sidebar.text_input(
+        "FMP API Key (optional)",
+        type="password",
+        placeholder="Leave blank to use yfinance",
+        key="canslim_fmp_key",
+        help="Get a free key at financialmodelingprep.com — provides cleaner fundamental data than yfinance."
+    )
+    if fmp_key:
+        st.sidebar.success("FMP key set — using FMP data")
+    else:
+        st.sidebar.caption("No key — using yfinance")
+
     st.sidebar.subheader("🎯 Tickers")
     ticker_input = st.sidebar.text_area(
         "Enter tickers (comma-separated)",
@@ -83,7 +96,7 @@ if page == "📈 CANSLIM Scoring":
             st.warning("Enter at least one ticker symbol.")
         else:
             with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
-                results = score_canslim_universe(symbols)
+                results = score_canslim_universe(symbols, fmp_api_key=fmp_key or None)
 
             # ── Ranked summary table ─────────────────────────────────────
             st.subheader("🏆 Ranked Scoring Table")
