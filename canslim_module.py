@@ -16,6 +16,110 @@ FMP_BASE = "https://financialmodelingprep.com/stable"
 
 
 # ============================================================================
+# COUNTRY / EXCHANGE REFERENCE DATA
+# ============================================================================
+
+# Country → list of (exchange_code, display_label) tuples
+COUNTRY_EXCHANGES = {
+    "Saudi Arabia":     [("SAU",      "Tadawul (SAU)")],
+    "United States":    [("NASDAQ",   "NASDAQ"), ("NYSE", "NYSE"), ("AMEX", "AMEX")],
+    "United Kingdom":   [("LSE",      "London Stock Exchange (LSE)")],
+    "Germany":          [("ETR",      "XETRA (ETR)"), ("FRA", "Frankfurt (FRA)")],
+    "France":           [("EURONEXT", "Euronext Paris")],
+    "Japan":            [("TYO",      "Tokyo Stock Exchange (TYO)")],
+    "Hong Kong":        [("HKSE",     "Hong Kong Stock Exchange (HKSE)")],
+    "China":            [("SHH",      "Shanghai (SHH)"), ("SHZ", "Shenzhen (SHZ)")],
+    "India":            [("NSE",      "NSE India"), ("BSE", "BSE India")],
+    "Canada":           [("TSX",      "Toronto Stock Exchange (TSX)"), ("TSXV", "TSX Venture (TSXV)")],
+    "Australia":        [("ASX",      "Australian Securities Exchange (ASX)")],
+    "South Korea":      [("KSC",      "KOSPI (KSC)"), ("KOE", "KOSDAQ (KOE)")],
+    "Brazil":           [("BVMF",     "B3 - Brasil Bolsa Balcão (BVMF)")],
+    "UAE":              [("ADX",      "Abu Dhabi Securities Exchange (ADX)"), ("DFM", "Dubai Financial Market (DFM)")],
+    "Qatar":            [("QSE",      "Qatar Stock Exchange (QSE)")],
+    "Kuwait":           [("KSE",      "Kuwait Stock Exchange (KSE)")],
+    "Bahrain":          [("BHB",      "Bahrain Bourse (BHB)")],
+    "Egypt":            [("EGX",      "Egyptian Exchange (EGX)")],
+    "Switzerland":      [("SIX",      "SIX Swiss Exchange")],
+    "Netherlands":      [("AMS",      "Euronext Amsterdam")],
+    "Sweden":           [("STO",      "Nasdaq Stockholm (STO)")],
+    "Norway":           [("OSL",      "Oslo Stock Exchange (OSL)")],
+    "Denmark":          [("CPH",      "Nasdaq Copenhagen (CPH)")],
+    "Singapore":        [("SES",      "Singapore Exchange (SES)")],
+    "South Africa":     [("JSE",      "Johannesburg Stock Exchange (JSE)")],
+    "Mexico":           [("BMV",      "Bolsa Mexicana de Valores (BMV)")],
+    "Turkey":           [("IST",      "Borsa Istanbul (IST)")],
+}
+
+# Exchange code → ticker suffix used by FMP and yfinance
+EXCHANGE_SUFFIX = {
+    "SAU":      ".SR",
+    "LSE":      ".L",
+    "ETR":      ".DE",
+    "FRA":      ".F",
+    "EURONEXT": ".PA",
+    "TYO":      ".T",
+    "HKSE":     ".HK",
+    "SHH":      ".SS",
+    "SHZ":      ".SZ",
+    "NSE":      ".NS",
+    "BSE":      ".BO",
+    "TSX":      ".TO",
+    "TSXV":     ".V",
+    "ASX":      ".AX",
+    "KSC":      ".KS",
+    "KOE":      ".KQ",
+    "BVMF":     ".SA",
+    "ADX":      ".AE",
+    "DFM":      ".DFM",
+    "QSE":      ".QA",
+    "KSE":      ".KW",
+    "BHB":      ".BH",
+    "EGX":      ".CA",
+    "SIX":      ".SW",
+    "AMS":      ".AS",
+    "STO":      ".ST",
+    "OSL":      ".OL",
+    "CPH":      ".CO",
+    "SES":      ".SI",
+    "JSE":      ".JO",
+    "BMV":      ".MX",
+    "IST":      ".IS",
+    # US exchanges — no suffix
+    "NASDAQ":   "",
+    "NYSE":     "",
+    "AMEX":     "",
+}
+
+
+def validate_ticker_fmp(symbol, api_key):
+    """
+    Look up a ticker via FMP profile endpoint.
+    Returns (company_name, exchange, currency) or (None, None, None) if not found.
+    """
+    try:
+        data = _fmp_get("profile", api_key, {"symbol": symbol})
+        if data and isinstance(data, list):
+            p = data[0]
+            return p.get("companyName"), p.get("exchangeShortName"), p.get("currency")
+    except Exception:
+        pass
+    return None, None, None
+
+
+def format_ticker(raw_ticker, exchange_code):
+    """
+    Apply the correct suffix for a given exchange if not already present.
+    e.g. '2020' + 'SAU' -> '2020.SR'
+    e.g. 'AAPL' + 'NASDAQ' -> 'AAPL'
+    """
+    suffix = EXCHANGE_SUFFIX.get(exchange_code, "")
+    raw = raw_ticker.strip().upper()
+    if suffix and not raw.endswith(suffix):
+        return raw + suffix
+    return raw
+
+
+# ============================================================================
 # HELPERS
 # ============================================================================
 

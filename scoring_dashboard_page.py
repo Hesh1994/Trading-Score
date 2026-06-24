@@ -35,7 +35,8 @@ st.sidebar.divider()
 # PAGE: CANSLIM SCORING  (rendered first; st.stop() prevents TA code from running)
 # ============================================================================
 if page == "📈 CANSLIM Scoring":
-    from canslim_module import score_canslim_universe
+    from canslim_module import (score_canslim_universe, COUNTRY_EXCHANGES,
+                                EXCHANGE_SUFFIX, validate_ticker_fmp, format_ticker)
 
     def _pct(val, d=1):
         return f"{val*100:.{d}f}%" if val is not None else "—"
@@ -67,11 +68,64 @@ if page == "📈 CANSLIM Scoring":
     else:
         st.sidebar.caption("No key — using yfinance")
 
+    # ── Ticker Finder ────────────────────────────────────────────────────
+    st.sidebar.subheader("🌍 Ticker Finder")
+
+    if 'canslim_ticker_list' not in st.session_state:
+        st.session_state['canslim_ticker_list'] = []
+
+    country_options = ["-- Select country --"] + sorted(COUNTRY_EXCHANGES.keys())
+    selected_country = st.sidebar.selectbox("Country", country_options, key="canslim_country")
+
+    selected_exchange_code = None
+    if selected_country != "-- Select country --":
+        exchange_list = COUNTRY_EXCHANGES[selected_country]
+        exchange_labels = [label for _, label in exchange_list]
+        selected_exchange_label = st.sidebar.selectbox("Exchange", exchange_labels, key="canslim_exchange")
+        selected_exchange_code = next(code for code, label in exchange_list if label == selected_exchange_label)
+        suffix = EXCHANGE_SUFFIX.get(selected_exchange_code, "")
+        hint = f"e.g. {'2020' if suffix else 'AAPL'}  →  formatted as {'2020' + suffix if suffix else 'AAPL'}"
+        st.sidebar.caption(f"Ticker format for this exchange: `TICKER{suffix}`  ({hint})")
+
+    raw_ticker = st.sidebar.text_input("Ticker symbol", placeholder="e.g. 2020 or AAPL", key="canslim_raw_ticker")
+
+    col_a, col_b = st.sidebar.columns(2)
+    validate_btn = col_a.button("🔍 Verify", key="canslim_verify_btn", use_container_width=True)
+    add_btn      = col_b.button("➕ Add",    key="canslim_add_btn",    use_container_width=True)
+
+    if raw_ticker:
+        formatted = format_ticker(raw_ticker, selected_exchange_code or "")
+        if validate_btn and fmp_key:
+            name, exch, cur = validate_ticker_fmp(formatted, fmp_key)
+            if name:
+                st.sidebar.success(f"✅ **{formatted}** — {name} ({exch}, {cur})")
+                st.session_state['canslim_verified_ticker'] = formatted
+            else:
+                st.sidebar.error(f"❌ Ticker **{formatted}** not found in FMP")
+                st.session_state.pop('canslim_verified_ticker', None)
+
+        if add_btn:
+            if formatted not in st.session_state['canslim_ticker_list']:
+                st.session_state['canslim_ticker_list'].append(formatted)
+                st.sidebar.success(f"Added **{formatted}**")
+            else:
+                st.sidebar.info(f"**{formatted}** already in list")
+
+    if st.session_state['canslim_ticker_list']:
+        st.sidebar.markdown("**Tickers to analyse:**  " +
+                            " · ".join(f"`{t}`" for t in st.session_state['canslim_ticker_list']))
+        if st.sidebar.button("🗑️ Clear list", key="canslim_clear_list"):
+            st.session_state['canslim_ticker_list'] = []
+
+    st.sidebar.divider()
+
+    # ── Manual entry (fallback / US stocks) ──────────────────────────────
     st.sidebar.subheader("🎯 Tickers")
+    _default_manual = ", ".join(st.session_state['canslim_ticker_list']) if st.session_state['canslim_ticker_list'] else "AAPL, MSFT, GOOGL, NVDA, AMZN"
     ticker_input = st.sidebar.text_area(
-        "Enter tickers (comma-separated)",
-        value="AAPL, MSFT, GOOGL, NVDA, AMZN",
-        height=100,
+        "Or enter tickers manually (comma-separated)",
+        value=_default_manual,
+        height=80,
         key="canslim_tickers"
     )
     st.sidebar.markdown(
@@ -109,7 +163,9 @@ if page == "📈 CANSLIM Scoring":
                 st.sidebar.error(f"Connection failed: {_e}")
 
     if run_canslim:
-        symbols = [s.strip().upper() for s in ticker_input.replace("\n", ",").split(",") if s.strip()]
+        manual = [s.strip().upper() for s in ticker_input.replace("\n", ",").split(",") if s.strip()]
+        finder = st.session_state.get('canslim_ticker_list', [])
+        symbols = list(dict.fromkeys(finder + manual))   # deduplicate, preserve order
         if not symbols:
             st.warning("Enter at least one ticker symbol.")
         else:
