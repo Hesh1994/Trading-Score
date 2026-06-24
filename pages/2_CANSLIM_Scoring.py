@@ -107,7 +107,7 @@ elif not fmp_key:
     st.sidebar.caption("⬆️ Enter your FMP API key above to load the full ticker list.")
 else:
     cache_key = f"fmp_tickers_{selected_exchange_code}"
-    already_loaded = cache_key in st.session_state and st.session_state[cache_key]
+    already_loaded = bool(cache_key in st.session_state and st.session_state[cache_key])
 
     load_col, reload_col = st.sidebar.columns(2)
     if load_col.button("📋 Load Tickers", key="load_tickers_btn", use_container_width=True,
