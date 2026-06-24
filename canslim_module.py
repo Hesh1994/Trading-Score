@@ -332,6 +332,14 @@ def fetch_canslim_data(symbol):
         data['inst_pct'] = None
         data['errors'].append(f'institutional ownership: {e}')
 
+    # ── Sector / industry ────────────────────────────────────────────────
+    try:
+        info = t.info or {}
+        data['sector']   = info.get('sector')   or ''
+        data['industry'] = info.get('industry') or ''
+    except Exception:
+        data['sector'] = data['industry'] = ''
+
     return data
 
 
@@ -439,6 +447,8 @@ def compute_canslim(data):
 
     return {
         'symbol':       data['symbol'],
+        'sector':       data.get('sector')   or '',
+        'industry':     data.get('industry') or '',
         'metrics':      m,
         'score':        total_score,
         'criteria_met': sum(1 for d in score_details if d['Met'] is True),
@@ -620,6 +630,17 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data['inst_pct'] = None
         data['errors'].append(f'institutional ownership: {e}')
 
+    # ── Sector / industry ────────────────────────────────────────────────
+    try:
+        profile = _fmp_get("profile", api_key, {'symbol': sym})
+        if profile and isinstance(profile, list):
+            data['sector']   = profile[0].get('sector')   or ''
+            data['industry'] = profile[0].get('industry') or ''
+        else:
+            data['sector'] = data['industry'] = ''
+    except Exception:
+        data['sector'] = data['industry'] = ''
+
     return data
 
 
@@ -660,6 +681,7 @@ def score_canslim_universe(symbols, fmp_api_key=None):
                 'data_gaps': 10, 'errors': [str(e)],
                 'metrics': {}, 'score_details': [], 'q_dates': [], 'a_dates': [],
                 'eps_gr_series': [], 'rev_gr_series': [],
+                'sector': '', 'industry': '',
             }
         results.append(scored)
 

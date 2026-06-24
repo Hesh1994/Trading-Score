@@ -277,16 +277,31 @@ if run_btn:
     else:
         st.success(f"✅ All data fetched successfully via {source_label}")
 
+    # ── Sector filter ─────────────────────────────────────────────────────
+    all_sectors = sorted({r['sector'] for r in results if r.get('sector')})
+    sector_options = ["ALL"] + all_sectors
+    selected_sector = st.selectbox(
+        "🏭 Filter by Sector",
+        sector_options,
+        key="canslim_sector_filter",
+    )
+    filtered_results = (
+        results if selected_sector == "ALL"
+        else [r for r in results if r.get('sector') == selected_sector]
+    )
+
     # ── Ranked summary table ──────────────────────────────────────────────
     st.subheader("🏆 Ranked Scoring Table")
 
     rows, rank, prev = [], 1, None
-    for i, r in enumerate(results):
+    for i, r in enumerate(filtered_results):
         if r['score'] != prev:
             rank = i + 1
         rows.append({
             'Rank':               rank,
             'Ticker':             r['symbol'],
+            'Sector':             r.get('sector') or '—',
+            'Industry':           r.get('industry') or '—',
             'Total Score (/100)': r['score'],
             'Criteria Met':       f"{r['criteria_met']} / 10",
             'Data Gaps':          r['data_gaps'],
@@ -299,7 +314,7 @@ if run_btn:
     st.subheader("🔍 Detailed Breakdown")
     st.caption("Expand any ticker to see its full metrics, scoring, and quarterly trend.")
 
-    for r in results:
+    for r in filtered_results:
         sym  = r['symbol']
         lq   = r['q_dates'][0] if r['q_dates'] else "—"
         la   = r['a_dates'][0] if r['a_dates'] else "—"
