@@ -113,12 +113,12 @@ else:
     if load_col.button("📋 Load Tickers", key="load_tickers_btn", use_container_width=True,
                         disabled=already_loaded):
         with st.spinner(f"Loading tickers for {selected_exchange_label}…"):
-            tickers = fetch_fmp_exchange_tickers(selected_exchange_code, fmp_key)
-        if tickers:
-            st.session_state[cache_key] = tickers
-            st.rerun()
-        else:
-            st.sidebar.warning("No tickers returned — FMP may not cover this exchange.")
+            try:
+                tickers = fetch_fmp_exchange_tickers(selected_exchange_code, fmp_key)
+                st.session_state[cache_key] = tickers
+                st.rerun()
+            except RuntimeError as _err:
+                st.sidebar.error(str(_err))
 
     if reload_col.button("🔄 Reload", key="reload_tickers_btn", use_container_width=True,
                           disabled=not already_loaded):
