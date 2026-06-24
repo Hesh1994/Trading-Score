@@ -265,11 +265,15 @@ if run_btn:
         st.stop()
 
     with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
-        results = score_canslim_universe(symbols, fmp_api_key=fmp_key or None)
+        st.session_state['canslim_results'] = score_canslim_universe(symbols, fmp_api_key=fmp_key or None)
+        st.session_state['canslim_source']  = "FMP API" if fmp_key else "yfinance"
+
+if st.session_state.get('canslim_results'):
+    results      = st.session_state['canslim_results']
+    source_label = st.session_state.get('canslim_source', 'FMP API')
 
     # ── Data fetch diagnostics ────────────────────────────────────────────
-    all_errors   = [(r['symbol'], e) for r in results for e in r.get('errors', [])]
-    source_label = "FMP API" if fmp_key else "yfinance"
+    all_errors = [(r['symbol'], e) for r in results for e in r.get('errors', [])]
     if all_errors:
         with st.expander(f"⚠️ Data fetch warnings ({len(all_errors)} issues via {source_label}) — click to expand"):
             for sym_err, msg in all_errors:
@@ -367,7 +371,8 @@ if run_btn:
     st.info("Expand any ticker above to see its full CANSLIM breakdown.")
 
 else:
-    st.info("👆 Enter tickers in the sidebar and click **Run CANSLIM Analysis** to start.")
+    if not run_btn:
+        st.info("👆 Enter tickers in the sidebar and click **Run CANSLIM Analysis** to start.")
 
     with st.expander("📖 About CANSLIM"):
         st.markdown("""
