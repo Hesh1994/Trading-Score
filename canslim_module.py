@@ -21,88 +21,162 @@ FMP_BASE = "https://financialmodelingprep.com/stable"
 
 # Country → list of (exchange_code, display_label) tuples
 COUNTRY_EXCHANGES = {
-    "Saudi Arabia":     [("SAU",      "Tadawul (SAU)")],
-    "United States":    [("NASDAQ",   "NASDAQ"), ("NYSE", "NYSE"), ("AMEX", "AMEX")],
+    # ── Americas ──────────────────────────────────────────────────────────
+    "United States":    [("NASDAQ",   "NASDAQ"),
+                         ("NYSE",     "NYSE"),
+                         ("AMEX",     "AMEX"),
+                         ("OTC",      "OTC Markets")],
+    "Canada":           [("TSX",      "Toronto Stock Exchange (TSX)"),
+                         ("TSXV",     "TSX Venture (TSXV)"),
+                         ("CNSX",     "Canadian Securities Exchange (CSE)")],
+    "Brazil":           [("BVMF",     "B3 – Brasil Bolsa Balcão (BVMF)")],
+    "Mexico":           [("BMV",      "Bolsa Mexicana de Valores (BMV)")],
+    "Argentina":        [("BCBA",     "Buenos Aires Stock Exchange (BCBA)")],
+    "Chile":            [("BCS",      "Bolsa de Santiago (BCS)")],
+    "Colombia":         [("BVC",      "Bolsa de Valores de Colombia (BVC)")],
+    "Peru":             [("BVL",      "Bolsa de Valores de Lima (BVL)")],
+
+    # ── Europe ────────────────────────────────────────────────────────────
     "United Kingdom":   [("LSE",      "London Stock Exchange (LSE)")],
-    "Germany":          [("ETR",      "XETRA (ETR)"), ("FRA", "Frankfurt (FRA)")],
+    "Germany":          [("ETR",      "XETRA (ETR)"),
+                         ("FRA",      "Frankfurt (FRA)")],
     "France":           [("EURONEXT", "Euronext Paris")],
-    "Japan":            [("TYO",      "Tokyo Stock Exchange (TYO)")],
-    "Hong Kong":        [("HKSE",     "Hong Kong Stock Exchange (HKSE)")],
-    "China":            [("SHH",      "Shanghai (SHH)"), ("SHZ", "Shenzhen (SHZ)")],
-    "India":            [("NSE",      "NSE India"), ("BSE", "BSE India")],
-    "Canada":           [("TSX",      "Toronto Stock Exchange (TSX)"), ("TSXV", "TSX Venture (TSXV)")],
-    "Australia":        [("ASX",      "Australian Securities Exchange (ASX)")],
-    "South Korea":      [("KSC",      "KOSPI (KSC)"), ("KOE", "KOSDAQ (KOE)")],
-    "Brazil":           [("BVMF",     "B3 - Brasil Bolsa Balcão (BVMF)")],
-    "UAE":              [("ADX",      "Abu Dhabi Securities Exchange (ADX)"), ("DFM", "Dubai Financial Market (DFM)")],
-    "Qatar":            [("QSE",      "Qatar Stock Exchange (QSE)")],
-    "Kuwait":           [("KSE",      "Kuwait Stock Exchange (KSE)")],
-    "Bahrain":          [("BHB",      "Bahrain Bourse (BHB)")],
-    "Egypt":            [("EGX",      "Egyptian Exchange (EGX)")],
-    "Switzerland":      [("SIX",      "SIX Swiss Exchange")],
     "Netherlands":      [("AMS",      "Euronext Amsterdam")],
+    "Belgium":          [("EBR",      "Euronext Brussels")],
+    "Portugal":         [("ELI",      "Euronext Lisbon")],
+    "Italy":            [("MIL",      "Borsa Italiana (MIL)")],
+    "Spain":            [("MCE",      "Bolsa de Madrid (MCE)")],
+    "Switzerland":      [("SIX",      "SIX Swiss Exchange")],
     "Sweden":           [("STO",      "Nasdaq Stockholm (STO)")],
     "Norway":           [("OSL",      "Oslo Stock Exchange (OSL)")],
     "Denmark":          [("CPH",      "Nasdaq Copenhagen (CPH)")],
-    "Singapore":        [("SES",      "Singapore Exchange (SES)")],
-    "South Africa":     [("JSE",      "Johannesburg Stock Exchange (JSE)")],
-    "Mexico":           [("BMV",      "Bolsa Mexicana de Valores (BMV)")],
+    "Finland":          [("HEL",      "Nasdaq Helsinki (HEL)")],
+    "Austria":          [("VIE",      "Vienna Stock Exchange (VIE)")],
+    "Poland":           [("WSE",      "Warsaw Stock Exchange (WSE)")],
+    "Greece":           [("ATH",      "Athens Stock Exchange (ATH)")],
+    "Russia":           [("MCX",      "Moscow Exchange (MCX)")],
     "Turkey":           [("IST",      "Borsa Istanbul (IST)")],
+    "Czech Republic":   [("PRA",      "Prague Stock Exchange (PRA)")],
+    "Hungary":          [("BUD",      "Budapest Stock Exchange (BUD)")],
+    "Romania":          [("BVB",      "Bucharest Stock Exchange (BVB)")],
+
+    # ── Asia Pacific ──────────────────────────────────────────────────────
+    "Japan":            [("TYO",      "Tokyo Stock Exchange (TYO)")],
+    "China":            [("SHH",      "Shanghai Stock Exchange (SHH)"),
+                         ("SHZ",      "Shenzhen Stock Exchange (SHZ)")],
+    "Hong Kong":        [("HKSE",     "Hong Kong Stock Exchange (HKSE)")],
+    "South Korea":      [("KSC",      "KOSPI (KSC)"),
+                         ("KOE",      "KOSDAQ (KOE)")],
+    "India":            [("NSE",      "NSE India"),
+                         ("BSE",      "BSE India")],
+    "Australia":        [("ASX",      "Australian Securities Exchange (ASX)")],
+    "New Zealand":      [("NZX",      "New Zealand Exchange (NZX)")],
+    "Singapore":        [("SES",      "Singapore Exchange (SES)")],
+    "Malaysia":         [("KLSE",     "Bursa Malaysia (KLSE)")],
+    "Thailand":         [("SET",      "Stock Exchange of Thailand (SET)")],
+    "Indonesia":        [("IDX",      "Indonesia Stock Exchange (IDX)")],
+    "Philippines":      [("PSE",      "Philippine Stock Exchange (PSE)")],
+    "Taiwan":           [("TAI",      "Taiwan Stock Exchange (TAI)"),
+                         ("TWO",      "Taipei Exchange (TWO)")],
+    "Vietnam":          [("HNX",      "Hanoi Stock Exchange (HNX)"),
+                         ("HOSE",     "Ho Chi Minh Stock Exchange (HOSE)")],
+
+    # ── Middle East ───────────────────────────────────────────────────────
+    "Saudi Arabia":     [("SAU",      "Tadawul (SAU)")],
+    "UAE":              [("ADX",      "Abu Dhabi Securities Exchange (ADX)"),
+                         ("DFM",      "Dubai Financial Market (DFM)")],
+    "Qatar":            [("QSE",      "Qatar Stock Exchange (QSE)")],
+    "Kuwait":           [("KSE",      "Kuwait Stock Exchange (KSE)")],
+    "Bahrain":          [("BHB",      "Bahrain Bourse (BHB)")],
+    "Oman":             [("MSM",      "Muscat Securities Market (MSM)")],
+    "Jordan":           [("ASE",      "Amman Stock Exchange (ASE)")],
+    "Israel":           [("TASE",     "Tel Aviv Stock Exchange (TASE)")],
+
+    # ── Africa ────────────────────────────────────────────────────────────
+    "Egypt":            [("EGX",      "Egyptian Exchange (EGX)")],
+    "South Africa":     [("JSE",      "Johannesburg Stock Exchange (JSE)")],
+    "Morocco":          [("CAS",      "Casablanca Stock Exchange (CAS)")],
+    "Nigeria":          [("NGM",      "Nigerian Exchange (NGM)")],
+    "Kenya":            [("NSE_KE",   "Nairobi Securities Exchange (NSE)")],
 }
 
-# Exchange code → ticker suffix used by FMP and yfinance
+# Exchange code → ticker suffix for FMP / yfinance
 EXCHANGE_SUFFIX = {
-    "SAU":      ".SR",
-    "LSE":      ".L",
-    "ETR":      ".DE",
-    "FRA":      ".F",
-    "EURONEXT": ".PA",
-    "TYO":      ".T",
-    "HKSE":     ".HK",
-    "SHH":      ".SS",
-    "SHZ":      ".SZ",
-    "NSE":      ".NS",
-    "BSE":      ".BO",
-    "TSX":      ".TO",
-    "TSXV":     ".V",
-    "ASX":      ".AX",
-    "KSC":      ".KS",
-    "KOE":      ".KQ",
-    "BVMF":     ".SA",
-    "ADX":      ".AE",
-    "DFM":      ".DFM",
-    "QSE":      ".QA",
-    "KSE":      ".KW",
-    "BHB":      ".BH",
-    "EGX":      ".CA",
-    "SIX":      ".SW",
-    "AMS":      ".AS",
-    "STO":      ".ST",
-    "OSL":      ".OL",
-    "CPH":      ".CO",
-    "SES":      ".SI",
-    "JSE":      ".JO",
-    "BMV":      ".MX",
-    "IST":      ".IS",
-    # US exchanges — no suffix
-    "NASDAQ":   "",
-    "NYSE":     "",
-    "AMEX":     "",
+    # Americas
+    "NASDAQ":   "", "NYSE":  "", "AMEX":  "", "OTC":  "",
+    "TSX":      ".TO", "TSXV": ".V",  "CNSX":  ".CN",
+    "BVMF":     ".SA", "BMV":  ".MX", "BCBA":  ".BA",
+    "BCS":      ".SN", "BVC":  ".CL", "BVL":   ".LM",
+    # Europe
+    "LSE":      ".L",  "ETR":  ".DE", "FRA":   ".F",
+    "EURONEXT": ".PA", "AMS":  ".AS", "EBR":   ".BR",
+    "ELI":      ".LS", "MIL":  ".MI", "MCE":   ".MC",
+    "SIX":      ".SW", "STO":  ".ST", "OSL":   ".OL",
+    "CPH":      ".CO", "HEL":  ".HE", "VIE":   ".VI",
+    "WSE":      ".WA", "ATH":  ".AT", "MCX":   ".ME",
+    "IST":      ".IS", "PRA":  ".PR", "BUD":   ".BD",
+    "BVB":      ".RO",
+    # Asia Pacific
+    "TYO":      ".T",  "SHH":  ".SS", "SHZ":   ".SZ",
+    "HKSE":     ".HK", "KSC":  ".KS", "KOE":   ".KQ",
+    "NSE":      ".NS", "BSE":  ".BO", "ASX":   ".AX",
+    "NZX":      ".NZ", "SES":  ".SI", "KLSE":  ".KL",
+    "SET":      ".BK", "IDX":  ".JK", "PSE":   ".PS",
+    "TAI":      ".TW", "TWO":  ".TWO","HNX":   ".HN",
+    "HOSE":     ".VN",
+    # Middle East
+    "SAU":      ".SR", "ADX":  ".AD", "DFM":   ".DU",
+    "QSE":      ".QA", "KSE":  ".KW", "BHB":   ".BH",
+    "MSM":      ".OM", "ASE":  ".AM", "TASE":  ".TA",
+    # Africa
+    "EGX":      ".CA", "JSE":  ".JO", "CAS":   ".CS",
+    "NGM":      ".LG", "NSE_KE": ".NR",
+}
+
+# Exchange code → FMP screener exchange parameter value (where it differs from our code)
+FMP_EXCHANGE_CODE = {
+    "ETR":    "XETRA",
+    "CNSX":   "CSE",
+    "HKSE":   "HKEX",
+    "NSE_KE": "NSE",
 }
 
 
 def validate_ticker_fmp(symbol, api_key):
     """
-    Look up a ticker via FMP profile endpoint.
+    Look up a ticker via FMP.
+    Tries /profile first, then falls back to /search for exchanges (e.g. EGX)
+    that profile doesn't always cover.
     Returns (company_name, exchange, currency) or (None, None, None) if not found.
     """
+    # 1. Profile — fastest, works for most exchanges
     try:
         data = _fmp_get("profile", api_key, {"symbol": symbol})
-        if data and isinstance(data, list):
+        if data and isinstance(data, list) and data[0].get("companyName"):
             p = data[0]
             return p.get("companyName"), p.get("exchangeShortName"), p.get("currency")
     except Exception:
         pass
+
+    # 2. Search — catches listings that profile misses (e.g. EGX, smaller exchanges)
+    try:
+        results = _fmp_get("search", api_key, {"query": symbol, "limit": 10})
+        if results and isinstance(results, list):
+            sym_upper = symbol.upper()
+            # Prefer an exact symbol match
+            for item in results:
+                if item.get("symbol", "").upper() == sym_upper:
+                    return (item.get("name"),
+                            item.get("exchangeShortName") or item.get("stockExchange"),
+                            item.get("currency"))
+            # Fall back to first result
+            p = results[0]
+            return (p.get("name"),
+                    p.get("exchangeShortName") or p.get("stockExchange"),
+                    p.get("currency"))
+    except Exception:
+        pass
+
     return None, None, None
 
 
@@ -395,14 +469,61 @@ def _fmp_get(endpoint, api_key, params=None):
     return data
 
 
+def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=3000):
+    """
+    Return all tickers listed on an exchange via the FMP stock screener.
+    Returns a sorted list of (symbol, company_name) tuples, or [] on failure.
+    """
+    fmp_code = FMP_EXCHANGE_CODE.get(exchange_code, exchange_code)
+    try:
+        results = _fmp_get("company/stock-screener", api_key,
+                           {"exchange": fmp_code, "limit": limit})
+        if results and isinstance(results, list):
+            tickers = sorted(
+                {(r["symbol"], r.get("companyName") or r["symbol"])
+                 for r in results if r.get("symbol")},
+                key=lambda x: x[0]
+            )
+            return tickers
+    except Exception:
+        pass
+    return []
+
+
+def _resolve_fmp_symbol(symbol, api_key):
+    """
+    Use FMP search to find the canonical symbol FMP uses for this ticker.
+    Handles cases where the user supplies 'ABUK.CA' but FMP stores it differently.
+    Returns the resolved FMP symbol, or the original if search finds nothing.
+    """
+    try:
+        results = _fmp_get("search", api_key, {"query": symbol, "limit": 10})
+        if results and isinstance(results, list):
+            sym_upper = symbol.upper()
+            base      = sym_upper.split(".")[0]
+            # 1. Exact match
+            for item in results:
+                if item.get("symbol", "").upper() == sym_upper:
+                    return item["symbol"]
+            # 2. Same base ticker, any suffix (e.g. ABUK.CA → ABUK or ABUK.EGX)
+            for item in results:
+                if item.get("symbol", "").upper().split(".")[0] == base:
+                    return item["symbol"]
+    except Exception:
+        pass
+    return symbol
+
+
 def fetch_canslim_data_fmp(symbol, api_key):
     """
     Fetch all CANSLIM data from FMP stable API (financialmodelingprep.com/stable).
+    Resolves the canonical FMP symbol via search before fetching, so suffix
+    mismatches (e.g. ABUK.CA vs ABUK) are corrected automatically.
     BVPS = totalStockholdersEquity / outstandingShares (shares-float endpoint).
-    Institutional ownership falls back to yfinance (no stable endpoint available).
+    Institutional ownership via yfinance (no FMP stable endpoint available).
     Returns data in the same format as fetch_canslim_data() (most-recent first).
     """
-    sym = symbol.upper()
+    sym = _resolve_fmp_symbol(symbol.upper(), api_key)
     data = {'symbol': sym, 'errors': []}
 
     # ── Quarterly income statement (12 quarters) ─────────────────────────
