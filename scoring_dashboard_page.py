@@ -94,7 +94,7 @@ if page == "📈 CANSLIM Scoring":
         test_ticker = st.sidebar.text_input("Test ticker", value="AAPL", key="canslim_test_ticker")
         if st.sidebar.button("🔌 Test FMP Connection", key="canslim_test_btn"):
             import requests as _req
-            _url = f"https://financialmodelingprep.com/api/v3/income-statement/{test_ticker.upper()}?period=quarter&limit=2&apikey={fmp_key}"
+            _url = f"https://financialmodelingprep.com/stable/income-statement?symbol={test_ticker.upper()}&period=quarterly&limit=2&apikey={fmp_key}"
             try:
                 _r = _req.get(_url, timeout=10)
                 _data = _r.json()

@@ -12,7 +12,7 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_BASE = "https://financialmodelingprep.com/stable"
 
 
 # ============================================================================
@@ -293,19 +293,20 @@ def _fmp_get(endpoint, api_key, params=None):
 
 def fetch_canslim_data_fmp(symbol, api_key):
     """
-    Fetch all CANSLIM data exclusively from FMP (no yfinance dependency).
-    Requires a paid FMP plan for institutional-holder endpoint.
+    Fetch all CANSLIM data from FMP stable API (financialmodelingprep.com/stable).
+    BVPS = totalStockholdersEquity / outstandingShares (shares-float endpoint).
+    Institutional ownership falls back to yfinance (no stable endpoint available).
     Returns data in the same format as fetch_canslim_data() (most-recent first).
     """
     sym = symbol.upper()
     data = {'symbol': sym, 'errors': []}
 
-    # ── Quarterly income statement (12 quarters = 3 years) ───────────────
+    # ── Quarterly income statement (12 quarters) ─────────────────────────
     try:
-        q_inc = _fmp_get(f"income-statement/{sym}", api_key,
-                         {'period': 'quarter', 'limit': 12})
+        q_inc = _fmp_get("income-statement", api_key,
+                         {'symbol': sym, 'period': 'quarterly', 'limit': 12})
         if q_inc:
-            data['q_eps']    = [d.get('epsdiluted') or d.get('eps') for d in q_inc]
+            data['q_eps']    = [d.get('epsDiluted') or d.get('eps') for d in q_inc]
             data['q_rev']    = [d.get('revenue')         for d in q_inc]
             data['q_pretax'] = [d.get('incomeBeforeTax') for d in q_inc]
             data['q_ni']     = [d.get('netIncome')       for d in q_inc]
@@ -317,24 +318,33 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
         data['errors'].append(f'FMP quarterly income: {e}')
 
-    # ── Quarterly balance sheet (BVPS, 12 quarters) ──────────────────────
+    # ── Quarterly BVPS: equity / shares-outstanding ───────────────────────
+    # stable API has no bookValuePerShare field; compute from balance sheet
     try:
-        q_bs = _fmp_get(f"balance-sheet-statement/{sym}", api_key,
-                        {'period': 'quarter', 'limit': 12})
-        if q_bs:
-            data['q_bvps'] = [d.get('bookValuePerShare') for d in q_bs]
+        q_bs = _fmp_get("balance-sheet-statement", api_key,
+                        {'symbol': sym, 'period': 'quarterly', 'limit': 12})
+        sf   = _fmp_get("shares-float", api_key, {'symbol': sym})
+        shares_out = float(sf[0]['outstandingShares']) if sf else None
+
+        if q_bs and shares_out:
+            data['q_bvps'] = [
+                d.get('totalStockholdersEquity') / shares_out
+                if d.get('totalStockholdersEquity') else None
+                for d in q_bs
+            ]
         else:
             data['q_bvps'] = None
-            data['errors'].append('FMP: no quarterly balance sheet data')
+            data['errors'].append('FMP: could not compute BVPS (missing balance sheet or shares)')
     except Exception as e:
         data['q_bvps'] = None
-        data['errors'].append(f'FMP balance sheet: {e}')
+        data['errors'].append(f'FMP BVPS: {e}')
 
     # ── Annual income statement (6 years) ────────────────────────────────
     try:
-        a_inc = _fmp_get(f"income-statement/{sym}", api_key, {'limit': 6})
+        a_inc = _fmp_get("income-statement", api_key,
+                         {'symbol': sym, 'period': 'annual', 'limit': 6})
         if a_inc:
-            data['a_eps']    = [d.get('epsdiluted') or d.get('eps') for d in a_inc]
+            data['a_eps']    = [d.get('epsDiluted') or d.get('eps') for d in a_inc]
             data['a_pretax'] = [d.get('incomeBeforeTax') for d in a_inc]
             data['a_ni']     = [d.get('netIncome')       for d in a_inc]
             data['a_dates']  = [d.get('date', '')        for d in a_inc]
@@ -345,23 +355,20 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
         data['errors'].append(f'FMP annual income: {e}')
 
-    # ── Institutional ownership (FMP institutional-holder + profile) ──────
+    # ── Institutional ownership — yfinance fallback ───────────────────────
+    # FMP stable API has no institutional-holder endpoint
     try:
-        # Total shares outstanding from company profile
-        profile = _fmp_get(f"profile/{sym}", api_key)
-        shares_out = float(profile[0]['sharesOutstanding']) if profile else None
-
-        # Sum shares held by all reported institutional holders
-        holders = _fmp_get(f"institutional-holder/{sym}", api_key)
-        if holders and shares_out:
-            total_inst = sum(float(h.get('shares') or 0) for h in holders)
-            data['inst_pct'] = total_inst / shares_out
+        info = yf.Ticker(sym).info or {}
+        pct = info.get('institutionPercentHeld') or info.get('heldPercentInstitutions')
+        if pct is not None:
+            pct = float(pct)
+            data['inst_pct'] = pct / 100 if pct > 1 else pct
         else:
             data['inst_pct'] = None
-            data['errors'].append('FMP: institutional ownership unavailable')
+            data['errors'].append('institutional ownership unavailable')
     except Exception as e:
         data['inst_pct'] = None
-        data['errors'].append(f'FMP institutional ownership: {e}')
+        data['errors'].append(f'institutional ownership: {e}')
 
     return data
 
