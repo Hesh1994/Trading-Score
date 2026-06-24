@@ -90,6 +90,24 @@ if page == "📈 CANSLIM Scoring":
     run_canslim = st.sidebar.button("🚀 Run CANSLIM Analysis", type="primary",
                                     use_container_width=True, key="run_canslim")
 
+    if fmp_key:
+        test_ticker = st.sidebar.text_input("Test ticker", value="AAPL", key="canslim_test_ticker")
+        if st.sidebar.button("🔌 Test FMP Connection", key="canslim_test_btn"):
+            import requests as _req
+            _url = f"https://financialmodelingprep.com/api/v3/income-statement/{test_ticker.upper()}?period=quarter&limit=2&apikey={fmp_key}"
+            try:
+                _r = _req.get(_url, timeout=10)
+                _data = _r.json()
+                if isinstance(_data, list) and _data:
+                    st.sidebar.success(f"✅ FMP OK — got {len(_data)} quarters for {test_ticker.upper()}")
+                    st.sidebar.json(_data[0])
+                elif isinstance(_data, dict) and "Error Message" in _data:
+                    st.sidebar.error(f"FMP error: {_data['Error Message']}")
+                else:
+                    st.sidebar.warning(f"Unexpected response: {_data}")
+            except Exception as _e:
+                st.sidebar.error(f"Connection failed: {_e}")
+
     if run_canslim:
         symbols = [s.strip().upper() for s in ticker_input.replace("\n", ",").split(",") if s.strip()]
         if not symbols:
@@ -97,6 +115,16 @@ if page == "📈 CANSLIM Scoring":
         else:
             with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
                 results = score_canslim_universe(symbols, fmp_api_key=fmp_key or None)
+
+            # ── Data fetch diagnostics ────────────────────────────────────
+            all_errors = [(r['symbol'], e) for r in results for e in r.get('errors', [])]
+            source_label = "FMP API" if fmp_key else "yfinance"
+            if all_errors:
+                with st.expander(f"⚠️ Data fetch warnings ({len(all_errors)} issues via {source_label}) — click to expand"):
+                    for sym_err, msg in all_errors:
+                        st.write(f"**{sym_err}**: {msg}")
+            else:
+                st.success(f"✅ All data fetched successfully via {source_label}")
 
             # ── Ranked summary table ─────────────────────────────────────
             st.subheader("🏆 Ranked Scoring Table")
