@@ -34,8 +34,9 @@ st.set_page_config(
 st.title("📈 CANSLIM Multi-Ticker Scoring & Ranking")
 st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
-    "Data via yfinance — needs at least 8 quarters / 6 years of history."
+    "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
+st.caption("v2026-06-24c — sector filter + session state")
 
 # ============================================================================
 # HELPERS
