@@ -469,56 +469,50 @@ def _fmp_get(endpoint, api_key, params=None):
     return data
 
 
-def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=3000):
+def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     """
-    Return all tickers listed on an exchange as a sorted list of
+    Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
-    Tries several FMP stable-API endpoint paths in order.
-    Raises RuntimeError with a diagnostic message if all paths fail.
+
+    Uses /stable/stock-list (90k records, symbol + companyName) and
+    filters client-side by ticker suffix:
+      - Exchanges with a suffix (e.g. .SR, .CA): keep tickers ending with that suffix.
+      - US exchanges (no suffix): keep tickers that contain no dot.
+
+    Raises RuntimeError with a diagnostic message on failure.
     """
-    fmp_code = FMP_EXCHANGE_CODE.get(exchange_code, exchange_code)
-    attempts = []
+    suffix = EXCHANGE_SUFFIX.get(exchange_code, None)
 
-    def _parse(results, name_field="companyName"):
-        if not (results and isinstance(results, list)):
-            return []
-        return sorted(
-            {(r["symbol"], r.get(name_field) or r.get("name") or r["symbol"])
-             for r in results if r.get("symbol")},
-            key=lambda x: x[0]
-        )
-
-    # ── Attempt 1: stable screener ────────────────────────────────────────
-    for ep in ("company/stock-screener", "stock-screener", "screener"):
-        try:
-            data = _fmp_get(ep, api_key, {"exchange": fmp_code, "limit": limit})
-            tickers = _parse(data)
-            if tickers:
-                return tickers
-            attempts.append(f"{ep} → returned empty list")
-        except Exception as e:
-            attempts.append(f"{ep} → {e}")
-
-    # ── Attempt 2: full stock-list, filter client-side ────────────────────
     try:
         data = _fmp_get("stock-list", api_key, {})
-        tickers = sorted(
-            {(r["symbol"], r.get("name") or r["symbol"])
-             for r in (data or [])
-             if r.get("symbol") and
-             r.get("exchangeShortName", "").upper() == fmp_code.upper()},
-            key=lambda x: x[0]
-        )
-        if tickers:
-            return tickers
-        attempts.append(f"stock-list → 0 rows matched exchange={fmp_code}")
     except Exception as e:
-        attempts.append(f"stock-list → {e}")
+        raise RuntimeError(f"Failed to fetch FMP stock list: {e}")
 
-    raise RuntimeError(
-        f"FMP returned no tickers for exchange '{fmp_code}'. "
-        f"Tried: {' | '.join(attempts)}"
-    )
+    if not data or not isinstance(data, list):
+        raise RuntimeError("FMP stock-list returned no data.")
+
+    if suffix:
+        # e.g. .SR for Saudi, .CA for Egypt, .DE for Germany
+        matches = [
+            (r["symbol"], r.get("companyName") or r["symbol"])
+            for r in data
+            if r.get("symbol", "").endswith(suffix)
+        ]
+    else:
+        # US / no-suffix exchanges — exclude any ticker that contains a dot
+        matches = [
+            (r["symbol"], r.get("companyName") or r["symbol"])
+            for r in data
+            if r.get("symbol") and "." not in r["symbol"]
+        ]
+
+    if not matches:
+        raise RuntimeError(
+            f"No tickers found for exchange '{exchange_code}' "
+            f"(suffix='{suffix or 'none'}') in FMP stock-list."
+        )
+
+    return sorted(matches, key=lambda x: x[0])[:limit]
 
 
 def _resolve_fmp_symbol(symbol, api_key):
