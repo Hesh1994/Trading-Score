@@ -36,7 +36,8 @@ st.sidebar.divider()
 # ============================================================================
 if page == "📈 CANSLIM Scoring":
     from canslim_module import (score_canslim_universe, COUNTRY_EXCHANGES,
-                                EXCHANGE_SUFFIX, validate_ticker_fmp, format_ticker)
+                                EXCHANGE_SUFFIX, validate_ticker_fmp, format_ticker,
+                                fetch_fmp_exchange_tickers)
 
     def _pct(val, d=1):
         return f"{val*100:.{d}f}%" if val is not None else "—"
@@ -74,37 +75,99 @@ if page == "📈 CANSLIM Scoring":
     if 'canslim_ticker_list' not in st.session_state:
         st.session_state['canslim_ticker_list'] = []
 
+    # Country & Exchange
     country_options = ["-- Select country --"] + sorted(COUNTRY_EXCHANGES.keys())
     selected_country = st.sidebar.selectbox("Country", country_options, key="canslim_country")
 
     selected_exchange_code = None
+    selected_exchange_label = ""
     if selected_country != "-- Select country --":
         exchange_list = COUNTRY_EXCHANGES[selected_country]
         exchange_labels = [label for _, label in exchange_list]
         selected_exchange_label = st.sidebar.selectbox("Exchange", exchange_labels, key="canslim_exchange")
         selected_exchange_code = next(code for code, label in exchange_list if label == selected_exchange_label)
         suffix = EXCHANGE_SUFFIX.get(selected_exchange_code, "")
-        hint = f"e.g. {'2020' if suffix else 'AAPL'}  →  formatted as {'2020' + suffix if suffix else 'AAPL'}"
-        st.sidebar.caption(f"Ticker format for this exchange: `TICKER{suffix}`  ({hint})")
+        st.sidebar.caption(f"Ticker suffix for this exchange: `{suffix if suffix else '(none)'}`")
 
-    raw_ticker = st.sidebar.text_input("Ticker symbol", placeholder="e.g. 2020 or AAPL", key="canslim_raw_ticker")
+    # Load Tickers — always visible, shows what's missing
+    st.sidebar.markdown("**📋 Load Exchange Tickers**")
+    if not selected_exchange_code:
+        st.sidebar.caption("⬆️ Select a country and exchange above first.")
+    elif not fmp_key:
+        st.sidebar.caption("⬆️ Enter your FMP API key above to load the full ticker list.")
+    else:
+        cache_key = f"fmp_tickers_{selected_exchange_code}"
+        already_loaded = cache_key in st.session_state and st.session_state[cache_key]
 
-    col_a, col_b = st.sidebar.columns(2)
-    validate_btn = col_a.button("🔍 Verify", key="canslim_verify_btn", use_container_width=True)
-    add_btn      = col_b.button("➕ Add",    key="canslim_add_btn",    use_container_width=True)
+        load_col, reload_col = st.sidebar.columns(2)
+        if load_col.button("📋 Load Tickers", key="load_tickers_btn", use_container_width=True,
+                            disabled=already_loaded):
+            with st.spinner(f"Loading tickers for {selected_exchange_label}…"):
+                tickers = fetch_fmp_exchange_tickers(selected_exchange_code, fmp_key)
+            if tickers:
+                st.session_state[cache_key] = tickers
+                st.rerun()
+            else:
+                st.sidebar.warning("No tickers returned — FMP may not cover this exchange.")
 
+        if reload_col.button("🔄 Reload", key="reload_tickers_btn", use_container_width=True,
+                              disabled=not already_loaded):
+            st.session_state.pop(cache_key, None)
+            st.rerun()
+
+        if already_loaded:
+            tickers = st.session_state[cache_key]
+            st.sidebar.caption(f"{len(tickers):,} tickers loaded from FMP")
+
+            search_q = st.sidebar.text_input(
+                "🔍 Search ticker or name", placeholder="e.g. ABUK or Commercial",
+                key="ticker_search"
+            )
+            q = search_q.strip().upper()
+            filtered = (
+                [(s, n) for s, n in tickers if q in s.upper() or q in (n or "").upper()]
+                if q else tickers
+            )
+            if filtered:
+                options = [f"{s}  —  {n}" for s, n in filtered[:200]]
+                chosen = st.sidebar.selectbox(
+                    f"Select ticker ({len(filtered):,} match{'es' if len(filtered) != 1 else ''})",
+                    ["-- select --"] + options,
+                    key="ticker_select"
+                )
+                if chosen != "-- select --":
+                    chosen_sym = chosen.split("  —  ")[0].strip()
+                    if st.sidebar.button("➕ Add selected", key="add_from_list_btn",
+                                          use_container_width=True):
+                        if chosen_sym not in st.session_state['canslim_ticker_list']:
+                            st.session_state['canslim_ticker_list'].append(chosen_sym)
+                            st.sidebar.success(f"Added **{chosen_sym}**")
+                        else:
+                            st.sidebar.info(f"**{chosen_sym}** already in list")
+            else:
+                st.sidebar.info("No tickers match your search.")
+        else:
+            st.sidebar.caption("Click **Load Tickers** to browse all listed stocks.")
+
+    # Manual entry
+    st.sidebar.markdown("**Or enter ticker manually:**")
+    raw_ticker = st.sidebar.text_input("Ticker symbol", placeholder="e.g. ABUK or AAPL", key="canslim_raw_ticker")
     if raw_ticker:
         formatted = format_ticker(raw_ticker, selected_exchange_code or "")
-        if validate_btn and fmp_key:
-            name, exch, cur = validate_ticker_fmp(formatted, fmp_key)
-            if name:
-                st.sidebar.success(f"✅ **{formatted}** — {name} ({exch}, {cur})")
-                st.session_state['canslim_verified_ticker'] = formatted
+        col_v, col_a = st.sidebar.columns(2)
+        if col_v.button("🔍 Verify", key="canslim_verify_btn", use_container_width=True):
+            if fmp_key:
+                name, exch, cur = validate_ticker_fmp(formatted, fmp_key)
+                if name:
+                    st.sidebar.success(f"✅ **{formatted}** — {name} ({exch}, {cur})")
+                else:
+                    st.sidebar.warning(
+                        f"⚠️ **{formatted}** not found via FMP. "
+                        "It may still be valid — use ➕ Add anyway."
+                    )
             else:
-                st.sidebar.error(f"❌ Ticker **{formatted}** not found in FMP")
-                st.session_state.pop('canslim_verified_ticker', None)
-
-        if add_btn:
+                st.sidebar.warning("Enter an FMP API key to verify tickers.")
+        if col_a.button("➕ Add", key="canslim_add_btn", use_container_width=True):
             if formatted not in st.session_state['canslim_ticker_list']:
                 st.session_state['canslim_ticker_list'].append(formatted)
                 st.sidebar.success(f"Added **{formatted}**")
