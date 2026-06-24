@@ -377,6 +377,17 @@ def fetch_canslim_data_fmp(symbol, api_key):
 # UNIVERSE SCORING
 # ============================================================================
 
+def _normalize_ticker(sym, fmp_api_key=None):
+    """
+    Normalize ticker symbol.
+    Saudi Tadawul stocks are 4-digit numbers (e.g. 2020 → 2020.SR).
+    Auto-appends .SR when FMP API key is present and ticker is bare digits.
+    """
+    if sym.isdigit() and len(sym) == 4:
+        return sym + '.SR'
+    return sym
+
+
 def score_canslim_universe(symbols, fmp_api_key=None):
     """
     Score a list of tickers. Pass fmp_api_key to use FMP instead of yfinance.
@@ -384,7 +395,7 @@ def score_canslim_universe(symbols, fmp_api_key=None):
     """
     results = []
     for sym in symbols:
-        sym = sym.strip().upper()
+        sym = _normalize_ticker(sym.strip().upper(), fmp_api_key)
         if not sym:
             continue
         try:
