@@ -37,7 +37,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-25p — results table single column")
+    st.caption("v2026-06-25q — unified single results table")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -622,41 +622,22 @@ if _run_btn_header:
             st.metric("Hold Signals", hold_count, delta_color="off")
 
         st.header("🎯 Scoring Results")
-        _display_df = results_df[["Ticker", "Net Score"]].rename(columns={"Net Score": "Total Score"})
-        st.dataframe(_display_df.style.format({"Total Score": "{:.2f}"}), use_container_width=True)
-    
-    # Detailed signals per stock
-    st.header("🔍 Detailed Signals per Stock")
-    
-    for i, result in enumerate(results[:min(10, len(results))]):  # Show top 10
-        with st.expander(f"{result['ticker']} - {result['signal']} (Net: {result['net_score']})"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Buy Score", result['buy_score'])
-            with col2:
-                st.metric("Sell Score", result['sell_score'])
-            with col3:
-                st.metric("Net Score", result['net_score'])
-            
-            st.write("**Signals by Indicator:**")
-            signals_data = []
-            for ind_key, sig_data in result['signals'].items():
-                if 'error' not in sig_data:
-                    buy_triggered = "✅ BUY" if sig_data.get('buy') else ""
-                    sell_triggered = "⛔ SELL" if sig_data.get('sell') else ""
-                    
-                    signal_str = f"{buy_triggered} {sell_triggered}".strip()
-                    if not signal_str:
-                        signal_str = "—"
-                    
-                    signals_data.append({
-                        'Indicator': ind_key.upper(),
-                        'Signal': signal_str,
-                        'Details': str(sig_data).replace("'buy': ", "").replace("'sell': ", "")
-                    })
-            
-            if signals_data:
-                st.dataframe(pd.DataFrame(signals_data), use_container_width=True)
+        # Build one unified table: Ticker + Total Score + one column per indicator
+        _unified_rows = []
+        for _r in results:
+            _row = {"Ticker": _r["ticker"], "Total Score": round(_r["net_score"], 2)}
+            for _ind_key, _sig in _r.get("signals", {}).items():
+                if "error" not in _sig:
+                    if _sig.get("buy"):
+                        _cell = "✅ BUY"
+                    elif _sig.get("sell"):
+                        _cell = "⛔ SELL"
+                    else:
+                        _cell = "—"
+                    _row[_ind_key.upper()] = _cell
+            _unified_rows.append(_row)
+        _unified_df = pd.DataFrame(_unified_rows).sort_values("Total Score", ascending=False).reset_index(drop=True)
+        st.dataframe(_unified_df, use_container_width=True)
     
     # Export to CSV
     st.header("📥 Export Results")
