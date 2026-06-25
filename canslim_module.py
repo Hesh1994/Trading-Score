@@ -479,6 +479,26 @@ def _fmp_get(endpoint, api_key, params=None):
     return data
 
 
+def fetch_ticker_sectors(symbol_list, api_key, batch_size=50):
+    """
+    Fetch sector for a list of symbols using FMP /stable/profile in batches.
+    Returns dict {symbol: sector_string}.  Missing / failed symbols get ''.
+    """
+    sector_map = {}
+    for i in range(0, len(symbol_list), batch_size):
+        batch = symbol_list[i:i + batch_size]
+        try:
+            profiles = _fmp_get("profile", api_key, {"symbol": ",".join(batch)})
+            items = profiles if isinstance(profiles, list) else ([profiles] if isinstance(profiles, dict) else [])
+            for p in items:
+                sym = p.get("symbol", "")
+                if sym:
+                    sector_map[sym] = p.get("sector") or ""
+        except Exception:
+            pass
+    return sector_map
+
+
 def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     """
     Return available tickers for an exchange as a sorted list of

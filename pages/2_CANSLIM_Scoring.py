@@ -16,7 +16,7 @@ import requests as _req
 try:
     from canslim_module import (score_canslim_universe, COUNTRY_EXCHANGES,
                                 EXCHANGE_SUFFIX, validate_ticker_fmp, format_ticker,
-                                fetch_fmp_exchange_tickers)
+                                fetch_fmp_exchange_tickers, fetch_ticker_sectors)
 except ImportError as _e:
     st.error(f"Cannot import canslim_module: {_e}\nMake sure canslim_module.py is in the repo root.")
     st.stop()
@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25b — sector filter in sidebar")
+st.caption("v2026-06-25c — sector filter before ticker list + select all")
 
 # ============================================================================
 # HELPERS
@@ -107,8 +107,10 @@ if not selected_exchange_code:
 elif not fmp_key:
     st.sidebar.caption("⬆️ Enter your FMP API key above to load the full ticker list.")
 else:
-    cache_key = f"fmp_tickers_{selected_exchange_code}"
-    already_loaded = bool(cache_key in st.session_state and st.session_state[cache_key])
+    cache_key        = f"fmp_tickers_{selected_exchange_code}"
+    sector_cache_key = f"fmp_sectors_{selected_exchange_code}"
+    already_loaded   = bool(st.session_state.get(cache_key))
+    sectors_loaded   = bool(st.session_state.get(sector_cache_key))
 
     load_col, reload_col = st.sidebar.columns(2)
     if load_col.button("📋 Load Tickers", key="load_tickers_btn", use_container_width=True,
@@ -124,24 +126,55 @@ else:
     if reload_col.button("🔄 Reload", key="reload_tickers_btn", use_container_width=True,
                           disabled=not already_loaded):
         st.session_state.pop(cache_key, None)
+        st.session_state.pop(sector_cache_key, None)
         st.rerun()
 
     if already_loaded:
         tickers = st.session_state[cache_key]
         st.sidebar.caption(f"{len(tickers):,} tickers loaded from FMP")
 
+        # ── Load sectors button ───────────────────────────────────────────
+        if not sectors_loaded:
+            if st.sidebar.button("🏭 Load Sectors", key="load_sectors_btn",
+                                  use_container_width=True):
+                sym_list = [s for s, _ in tickers]
+                with st.spinner(f"Fetching sector data for {len(sym_list):,} tickers…"):
+                    sector_map = fetch_ticker_sectors(sym_list, fmp_key)
+                    st.session_state[sector_cache_key] = sector_map
+                st.rerun()
+        else:
+            st.sidebar.caption("Sector data loaded")
+
+        # ── Sector filter (before ticker list) ───────────────────────────
+        sector_map = st.session_state.get(sector_cache_key, {})
+        available_sectors = sorted({v for v in sector_map.values() if v})
+        sector_choice = st.sidebar.selectbox(
+            "🏭 Filter by Sector",
+            ["ALL"] + available_sectors,
+            key="exchange_sector_filter",
+        )
+
+        # Apply sector filter
+        if sector_choice == "ALL" or not sector_map:
+            tickers_in_sector = tickers
+        else:
+            tickers_in_sector = [(s, n) for s, n in tickers
+                                  if sector_map.get(s, "") == sector_choice]
+
+        # ── Search within filtered tickers ───────────────────────────────
         search_q = st.sidebar.text_input(
             "🔍 Search ticker or name", placeholder="e.g. ABUK or Commercial",
             key="ticker_search"
         )
         q = search_q.strip().upper()
         filtered = (
-            [(s, n) for s, n in tickers if q in s.upper() or q in (n or "").upper()]
-            if q else tickers
+            [(s, n) for s, n in tickers_in_sector
+             if q in s.upper() or q in (n or "").upper()]
+            if q else tickers_in_sector
         )
 
         if filtered:
-            options = [f"{s}  —  {n}" for s, n in filtered[:200]]
+            options = [f"{s}  —  {n}" for s, n in filtered[:300]]
             chosen = st.sidebar.selectbox(
                 f"Select ticker ({len(filtered):,} match{'es' if len(filtered) != 1 else ''})",
                 ["-- select --"] + options,
@@ -149,13 +182,23 @@ else:
             )
             if chosen != "-- select --":
                 chosen_sym = chosen.split("  —  ")[0].strip()
-                if st.sidebar.button("➕ Add selected", key="add_from_list_btn",
-                                      use_container_width=True):
+                add_col, all_col = st.sidebar.columns(2)
+                if add_col.button("➕ Add", key="add_from_list_btn",
+                                   use_container_width=True):
                     if chosen_sym not in st.session_state['canslim_ticker_list']:
                         st.session_state['canslim_ticker_list'].append(chosen_sym)
                         st.sidebar.success(f"Added **{chosen_sym}**")
                     else:
                         st.sidebar.info(f"**{chosen_sym}** already in list")
+                if all_col.button("➕ All", key="add_all_btn",
+                                   use_container_width=True,
+                                   help=f"Add all {len(filtered):,} filtered tickers"):
+                    added = 0
+                    for s, _ in filtered:
+                        if s not in st.session_state['canslim_ticker_list']:
+                            st.session_state['canslim_ticker_list'].append(s)
+                            added += 1
+                    st.sidebar.success(f"Added {added} ticker(s)")
         else:
             st.sidebar.info("No tickers match your search.")
     else:
@@ -252,20 +295,6 @@ if fmp_key:
 
 run_btn = st.sidebar.button("🚀 Run CANSLIM Analysis", type="primary", use_container_width=True)
 
-# ── Sector filter (sidebar — populated from results once available) ───────
-st.sidebar.divider()
-st.sidebar.subheader("🏭 Sector Filter")
-_prior_results = st.session_state.get('canslim_results', [])
-_all_sectors   = sorted({r['sector'] for r in _prior_results if r.get('sector')})
-_sector_opts   = ["ALL"] + _all_sectors
-selected_sector = st.sidebar.selectbox(
-    "Filter results by sector",
-    _sector_opts,
-    key="canslim_sector_filter",
-    disabled=not _prior_results,
-    help="Run the analysis first, then use this to filter by sector.",
-)
-
 # ============================================================================
 # MAIN — RUN ANALYSIS
 # ============================================================================
@@ -297,10 +326,7 @@ if st.session_state.get('canslim_results'):
     else:
         st.success(f"✅ All data fetched successfully via {source_label}")
 
-    filtered_results = (
-        results if selected_sector == "ALL"
-        else [r for r in results if r.get('sector') == selected_sector]
-    )
+    filtered_results = results
 
     # ── Ranked summary table ──────────────────────────────────────────────
     st.subheader("🏆 Ranked Scoring Table")
