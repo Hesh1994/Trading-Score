@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25a — sector filter fixed (profile dict response)")
+st.caption("v2026-06-25b — sector filter in sidebar")
 
 # ============================================================================
 # HELPERS
@@ -252,6 +252,20 @@ if fmp_key:
 
 run_btn = st.sidebar.button("🚀 Run CANSLIM Analysis", type="primary", use_container_width=True)
 
+# ── Sector filter (sidebar — populated from results once available) ───────
+st.sidebar.divider()
+st.sidebar.subheader("🏭 Sector Filter")
+_prior_results = st.session_state.get('canslim_results', [])
+_all_sectors   = sorted({r['sector'] for r in _prior_results if r.get('sector')})
+_sector_opts   = ["ALL"] + _all_sectors
+selected_sector = st.sidebar.selectbox(
+    "Filter results by sector",
+    _sector_opts,
+    key="canslim_sector_filter",
+    disabled=not _prior_results,
+    help="Run the analysis first, then use this to filter by sector.",
+)
+
 # ============================================================================
 # MAIN — RUN ANALYSIS
 # ============================================================================
@@ -268,6 +282,7 @@ if run_btn:
     with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
         st.session_state['canslim_results'] = score_canslim_universe(symbols, fmp_api_key=fmp_key or None)
         st.session_state['canslim_source']  = "FMP API" if fmp_key else "yfinance"
+    st.rerun()
 
 if st.session_state.get('canslim_results'):
     results      = st.session_state['canslim_results']
@@ -282,14 +297,6 @@ if st.session_state.get('canslim_results'):
     else:
         st.success(f"✅ All data fetched successfully via {source_label}")
 
-    # ── Sector filter ─────────────────────────────────────────────────────
-    all_sectors = sorted({r['sector'] for r in results if r.get('sector')})
-    sector_options = ["ALL"] + all_sectors
-    selected_sector = st.selectbox(
-        "🏭 Filter by Sector",
-        sector_options,
-        key="canslim_sector_filter",
-    )
     filtered_results = (
         results if selected_sector == "ALL"
         else [r for r in results if r.get('sector') == selected_sector]
