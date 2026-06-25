@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25e — individual sector calls with progress")
+st.caption("v2026-06-25f — select all in dropdown, removed manual entry")
 
 # ============================================================================
 # HELPERS
@@ -173,75 +173,36 @@ else:
             tickers_in_sector = [(s, n) for s, n in tickers
                                   if sector_map.get(s, "") == sector_choice]
 
-        # ── Search within filtered tickers ───────────────────────────────
-        search_q = st.sidebar.text_input(
-            "🔍 Search ticker or name", placeholder="e.g. ABUK or Commercial",
-            key="ticker_search"
-        )
-        q = search_q.strip().upper()
-        filtered = (
-            [(s, n) for s, n in tickers_in_sector
-             if q in s.upper() or q in (n or "").upper()]
-            if q else tickers_in_sector
+        # ── Ticker dropdown with Select All ──────────────────────────────
+        ticker_options = ["-- select --", "✅ Select All"] + \
+                         [f"{s}  —  {n}" for s, n in tickers_in_sector[:500]]
+        chosen = st.sidebar.selectbox(
+            f"Select ticker ({len(tickers_in_sector):,} available)",
+            ticker_options,
+            key="ticker_select",
         )
 
-        if filtered:
-            options = [f"{s}  —  {n}" for s, n in filtered[:300]]
-            chosen = st.sidebar.selectbox(
-                f"Select ticker ({len(filtered):,} match{'es' if len(filtered) != 1 else ''})",
-                ["-- select --"] + options,
-                key="ticker_select"
-            )
-            if chosen != "-- select --":
-                chosen_sym = chosen.split("  —  ")[0].strip()
-                add_col, all_col = st.sidebar.columns(2)
-                if add_col.button("➕ Add", key="add_from_list_btn",
-                                   use_container_width=True):
-                    if chosen_sym not in st.session_state['canslim_ticker_list']:
-                        st.session_state['canslim_ticker_list'].append(chosen_sym)
-                        st.sidebar.success(f"Added **{chosen_sym}**")
-                    else:
-                        st.sidebar.info(f"**{chosen_sym}** already in list")
-                if all_col.button("➕ All", key="add_all_btn",
-                                   use_container_width=True,
-                                   help=f"Add all {len(filtered):,} filtered tickers"):
-                    added = 0
-                    for s, _ in filtered:
-                        if s not in st.session_state['canslim_ticker_list']:
-                            st.session_state['canslim_ticker_list'].append(s)
-                            added += 1
-                    st.sidebar.success(f"Added {added} ticker(s)")
-        else:
-            st.sidebar.info("No tickers match your search.")
+        if chosen == "✅ Select All":
+            if st.sidebar.button("➕ Add All to List", key="add_all_btn",
+                                  use_container_width=True):
+                added = 0
+                for s, _ in tickers_in_sector:
+                    if s not in st.session_state['canslim_ticker_list']:
+                        st.session_state['canslim_ticker_list'].append(s)
+                        added += 1
+                st.sidebar.success(f"Added {added} ticker(s)")
+        elif chosen != "-- select --":
+            chosen_sym = chosen.split("  —  ")[0].strip()
+            if st.sidebar.button("➕ Add to List", key="add_from_list_btn",
+                                  use_container_width=True):
+                if chosen_sym not in st.session_state['canslim_ticker_list']:
+                    st.session_state['canslim_ticker_list'].append(chosen_sym)
+                    st.sidebar.success(f"Added **{chosen_sym}**")
+                else:
+                    st.sidebar.info(f"**{chosen_sym}** already in list")
     else:
         st.sidebar.caption("Click **Load Tickers** to browse all listed stocks.")
 
-# ── Manual entry ──────────────────────────────────────────────────────────
-st.sidebar.markdown("**Or enter ticker manually:**")
-raw_ticker = st.sidebar.text_input(
-    "Ticker symbol", placeholder="e.g. ABUK or AAPL", key="canslim_raw_ticker"
-)
-if raw_ticker:
-    formatted = format_ticker(raw_ticker, selected_exchange_code or "")
-    col_v, col_a = st.sidebar.columns(2)
-    if col_v.button("🔍 Verify", key="canslim_verify_btn", use_container_width=True):
-        if fmp_key:
-            name, exch, cur = validate_ticker_fmp(formatted, fmp_key)
-            if name:
-                st.sidebar.success(f"✅ **{formatted}** — {name} ({exch}, {cur})")
-            else:
-                st.sidebar.warning(
-                    f"⚠️ **{formatted}** not found via FMP. "
-                    "It may still be valid — use ➕ Add anyway."
-                )
-        else:
-            st.sidebar.warning("Enter an FMP API key to verify tickers.")
-    if col_a.button("➕ Add", key="canslim_add_btn", use_container_width=True):
-        if formatted not in st.session_state['canslim_ticker_list']:
-            st.session_state['canslim_ticker_list'].append(formatted)
-            st.sidebar.success(f"Added **{formatted}**")
-        else:
-            st.sidebar.info(f"**{formatted}** already in list")
 
 # ── Current ticker list ───────────────────────────────────────────────────
 if st.session_state['canslim_ticker_list']:
@@ -256,16 +217,7 @@ st.sidebar.divider()
 # SIDEBAR — MANUAL TICKER ENTRY
 # ============================================================================
 
-st.sidebar.subheader("🎯 Tickers")
-_default = (", ".join(st.session_state['canslim_ticker_list'])
-            if st.session_state['canslim_ticker_list']
-            else "AAPL, MSFT, GOOGL, NVDA, AMZN")
-ticker_input = st.sidebar.text_area(
-    "Or enter tickers manually (comma-separated)",
-    value=_default,
-    height=80,
-    key="canslim_tickers",
-)
+ticker_input = ", ".join(st.session_state['canslim_ticker_list'])
 
 st.sidebar.markdown(
     """
@@ -312,9 +264,7 @@ run_btn = st.sidebar.button("🚀 Run CANSLIM Analysis", type="primary", use_con
 # ============================================================================
 
 if run_btn:
-    manual  = [s.strip().upper() for s in ticker_input.replace("\n", ",").split(",") if s.strip()]
-    finder  = st.session_state.get('canslim_ticker_list', [])
-    symbols = list(dict.fromkeys(finder + manual))   # deduplicate, preserve order
+    symbols = list(dict.fromkeys(st.session_state.get('canslim_ticker_list', [])))
 
     if not symbols:
         st.warning("Enter at least one ticker symbol.")
