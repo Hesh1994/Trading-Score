@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25g — ALL exchanges option")
+st.caption("v2026-06-25h — ALL countries option")
 
 # ============================================================================
 # HELPERS
@@ -85,14 +85,22 @@ if 'canslim_ticker_list' not in st.session_state:
     st.session_state['canslim_ticker_list'] = []
 
 # ── Country & Exchange ────────────────────────────────────────────────────
-country_options = ["-- Select country --"] + sorted(COUNTRY_EXCHANGES.keys())
+_ALL_COUNTRIES = "🌍 ALL Countries"
+country_options = ["-- Select country --", _ALL_COUNTRIES] + sorted(COUNTRY_EXCHANGES.keys())
 selected_country = st.sidebar.selectbox("Country", country_options, key="canslim_country")
 
-selected_exchange_codes  = []   # list of codes to load
+selected_exchange_codes  = []
 selected_exchange_label  = None
-selected_exchange_code   = None  # kept for suffix caption (single-exchange case)
+selected_exchange_code   = None
+_all_countries_selected  = (selected_country == _ALL_COUNTRIES)
 
-if selected_country != "-- Select country --":
+if _all_countries_selected:
+    # Skip exchange picker — load entire FMP stock list
+    selected_exchange_codes = ["__ALL__"]
+    selected_exchange_label = "All Countries / All Exchanges"
+    st.sidebar.caption("Full global stock list will be loaded (~90k tickers).")
+
+elif selected_country != "-- Select country --":
     exchange_list   = COUNTRY_EXCHANGES[selected_country]
     exchange_labels = [label for _, label in exchange_list]
     all_label       = f"ALL ({len(exchange_list)} exchanges)"
@@ -126,11 +134,16 @@ else:
                         disabled=already_loaded):
         with st.spinner(f"Loading tickers for {selected_exchange_label}…"):
             try:
-                combined = {}
-                for code in selected_exchange_codes:
-                    for sym, name in fetch_fmp_exchange_tickers(code, fmp_key):
-                        combined[sym] = name   # deduplicate by symbol
-                tickers = sorted(combined.items(), key=lambda x: x[0])
+                if selected_exchange_codes == ["__ALL__"]:
+                    # Full global list — no suffix filter
+                    raw = fetch_fmp_exchange_tickers("__ALL__", fmp_key)
+                    tickers = raw
+                else:
+                    combined = {}
+                    for code in selected_exchange_codes:
+                        for sym, name in fetch_fmp_exchange_tickers(code, fmp_key):
+                            combined[sym] = name
+                    tickers = sorted(combined.items(), key=lambda x: x[0])
                 st.session_state[cache_key] = tickers
                 st.rerun()
             except RuntimeError as _err:

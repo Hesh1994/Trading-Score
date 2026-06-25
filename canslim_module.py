@@ -516,8 +516,6 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
 
     Raises RuntimeError with a diagnostic message on failure.
     """
-    suffix = EXCHANGE_SUFFIX.get(exchange_code, None)
-
     try:
         data = _fmp_get("stock-list", api_key, {})
     except Exception as e:
@@ -525,6 +523,16 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
 
     if not data or not isinstance(data, list):
         raise RuntimeError("FMP stock-list returned no data.")
+
+    # Special code: return the full global list with no filtering
+    if exchange_code == "__ALL__":
+        matches = [
+            (r["symbol"], r.get("companyName") or r["symbol"])
+            for r in data if r.get("symbol")
+        ]
+        return sorted(matches, key=lambda x: x[0])[:limit]
+
+    suffix = EXCHANGE_SUFFIX.get(exchange_code, None)
 
     if suffix:
         # e.g. .SR for Saudi, .CA for Egypt, .DE for Germany
