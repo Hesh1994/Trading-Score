@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25f — select all in dropdown, removed manual entry")
+st.caption("v2026-06-25g — ALL exchanges option")
 
 # ============================================================================
 # HELPERS
@@ -88,27 +88,36 @@ if 'canslim_ticker_list' not in st.session_state:
 country_options = ["-- Select country --"] + sorted(COUNTRY_EXCHANGES.keys())
 selected_country = st.sidebar.selectbox("Country", country_options, key="canslim_country")
 
-selected_exchange_code = None
+selected_exchange_codes  = []   # list of codes to load
+selected_exchange_label  = None
+selected_exchange_code   = None  # kept for suffix caption (single-exchange case)
+
 if selected_country != "-- Select country --":
-    exchange_list = COUNTRY_EXCHANGES[selected_country]
+    exchange_list   = COUNTRY_EXCHANGES[selected_country]
     exchange_labels = [label for _, label in exchange_list]
-    selected_exchange_label = st.sidebar.selectbox("Exchange", exchange_labels, key="canslim_exchange")
-    selected_exchange_code = next(
-        code for code, label in exchange_list if label == selected_exchange_label
+    all_label       = f"ALL ({len(exchange_list)} exchanges)"
+    selected_exchange_label = st.sidebar.selectbox(
+        "Exchange", [all_label] + exchange_labels, key="canslim_exchange"
     )
-    suffix = EXCHANGE_SUFFIX.get(selected_exchange_code, "")
-    st.sidebar.caption(f"Ticker suffix for this exchange: `{suffix if suffix else '(none)'}`")
+    if selected_exchange_label == all_label:
+        selected_exchange_codes = [code for code, _ in exchange_list]
+    else:
+        selected_exchange_code  = next(code for code, lbl in exchange_list
+                                       if lbl == selected_exchange_label)
+        selected_exchange_codes = [selected_exchange_code]
+        suffix = EXCHANGE_SUFFIX.get(selected_exchange_code, "")
+        st.sidebar.caption(f"Ticker suffix: `{suffix if suffix else '(none)'}`")
 
 # ── Dynamic ticker list from FMP ──────────────────────────────────────────
 st.sidebar.markdown("**📋 Load Exchange Tickers**")
 
-if not selected_exchange_code:
+if not selected_exchange_codes:
     st.sidebar.caption("⬆️ Select a country and exchange above first.")
 elif not fmp_key:
     st.sidebar.caption("⬆️ Enter your FMP API key above to load the full ticker list.")
 else:
-    cache_key        = f"fmp_tickers_{selected_exchange_code}"
-    sector_cache_key = f"fmp_sectors_{selected_exchange_code}"
+    cache_key        = f"fmp_tickers_{'_'.join(sorted(selected_exchange_codes))}"
+    sector_cache_key = f"fmp_sectors_{'_'.join(sorted(selected_exchange_codes))}"
     already_loaded   = bool(st.session_state.get(cache_key))
     sectors_loaded   = bool(st.session_state.get(sector_cache_key))
 
@@ -117,7 +126,11 @@ else:
                         disabled=already_loaded):
         with st.spinner(f"Loading tickers for {selected_exchange_label}…"):
             try:
-                tickers = fetch_fmp_exchange_tickers(selected_exchange_code, fmp_key)
+                combined = {}
+                for code in selected_exchange_codes:
+                    for sym, name in fetch_fmp_exchange_tickers(code, fmp_key):
+                        combined[sym] = name   # deduplicate by symbol
+                tickers = sorted(combined.items(), key=lambda x: x[0])
                 st.session_state[cache_key] = tickers
                 st.rerun()
             except RuntimeError as _err:
