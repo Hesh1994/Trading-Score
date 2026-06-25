@@ -485,22 +485,23 @@ def fetch_price_data_fmp(symbol, start_date, end_date, api_key, interval='daily'
     Returns None on failure.
     """
     try:
-        data = requests.get(
+        resp = requests.get(
             f"{FMP_BASE}/historical-price-eod/full",
             params={
-                'symbol':  symbol,
-                'from':    str(start_date),
-                'to':      str(end_date),
-                'apikey':  api_key,
+                'symbol': symbol,
+                'from':   str(start_date),
+                'to':     str(end_date),
+                'apikey': api_key,
             },
             timeout=20,
         )
-        data.raise_for_status()
-        payload = data.json()
+        resp.raise_for_status()
+        payload = resp.json()
     except Exception:
         return None
 
-    # Response may be a dict with 'historical' key, or a list directly
+    # FMP returns a flat list: [{date, open, high, low, close, volume, ...}, ...]
+    # Guard against error dicts
     if isinstance(payload, dict):
         if 'Error Message' in payload:
             return None
@@ -516,38 +517,25 @@ def fetch_price_data_fmp(symbol, start_date, end_date, api_key, interval='daily'
     df = pd.DataFrame(rows)
     df['date'] = pd.to_datetime(df['date'])
     df = df.set_index('date').sort_index()
-
-    # Normalise column names
     df.columns = df.columns.str.lower()
-    rename = {'adjclose': 'adjclose', 'adj close': 'adjclose',
-              'adj_close': 'adjclose', 'adjusted_close': 'adjclose'}
-    df = df.rename(columns=rename)
+
+    # FMP has no adjClose in stable EOD — use close as adjclose
+    if 'adjclose' not in df.columns:
+        df['adjclose'] = df['close']
 
     keep = [c for c in ['open', 'high', 'low', 'close', 'adjclose', 'volume'] if c in df.columns]
-    df = df[keep].apply(pd.to_numeric, errors='coerce')
+    df = df[keep].apply(pd.to_numeric, errors='coerce').dropna(subset=['close'])
 
-    if 'close' not in df.columns or df.empty:
+    if df.empty:
         return None
 
     # Resample for weekly / monthly
+    agg = {'open': 'first', 'high': 'max', 'low': 'min',
+           'close': 'last', 'adjclose': 'last', 'volume': 'sum'}
     if interval == 'weekly':
-        df = df.resample('W').agg({
-            'open':     'first',
-            'high':     'max',
-            'low':      'min',
-            'close':    'last',
-            'adjclose': 'last',
-            'volume':   'sum',
-        }).dropna(subset=['close'])
+        df = df.resample('W').agg(agg).dropna(subset=['close'])
     elif interval == 'monthly':
-        df = df.resample('ME').agg({
-            'open':     'first',
-            'high':     'max',
-            'low':      'min',
-            'close':    'last',
-            'adjclose': 'last',
-            'volume':   'sum',
-        }).dropna(subset=['close'])
+        df = df.resample('ME').agg(agg).dropna(subset=['close'])
 
     return df if not df.empty else None
 

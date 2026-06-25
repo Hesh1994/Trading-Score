@@ -19,7 +19,7 @@ from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 try:
     from canslim_module import (COUNTRY_EXCHANGES, EXCHANGE_SUFFIX,
                                 fetch_fmp_exchange_tickers, fetch_ticker_sectors,
-                                fetch_price_universe_fmp)
+                                fetch_price_data_fmp, fetch_price_universe_fmp)
     _fmp_module_ok = True
 except ImportError:
     _fmp_module_ok = False
