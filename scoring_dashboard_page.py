@@ -383,6 +383,25 @@ if included_indicators:
 # ── Persist the updated config for the next rerun ─────────────────────────────
 st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 
+# ── FMP price endpoint test ───────────────────────────────────────────────
+if fmp_key and _fmp_module_ok:
+    with st.sidebar.expander("🔧 Test FMP Price Endpoint"):
+        _test_sym = st.text_input("Symbol", value=symbols_list[0] if symbols_list else "AAPL",
+                                  key="ta_price_test_sym")
+        if st.button("Test price fetch", key="ta_price_test_btn"):
+            import requests as _rq
+            _url = f"https://financialmodelingprep.com/stable/historical-price-eod/full"
+            _r = _rq.get(_url, params={"symbol": _test_sym, "from": str(start_date),
+                                        "to": str(end_date), "apikey": fmp_key}, timeout=15)
+            st.write(f"Status: {_r.status_code}")
+            _j = _r.json()
+            if isinstance(_j, list):
+                st.write(f"List with {len(_j)} rows. First row:")
+                st.json(_j[0] if _j else {})
+            elif isinstance(_j, dict):
+                st.write("Dict response:")
+                st.json({k: v for k, v in list(_j.items())[:3]})
+
 # ============================================================================
 # MAIN CONTENT
 # ============================================================================
