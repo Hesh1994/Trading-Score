@@ -79,193 +79,162 @@ timeframe = st.sidebar.selectbox(
     index=0
 )
 
-# Symbol Selection
-st.sidebar.subheader("🎯 Symbols")
-
-_source_options = ["Custom", "S&P 500 (first 20)", "S&P 500 (first 50)"]
-if _fmp_module_ok:
-    _source_options.append("FMP Exchange Lookup")
-
-symbol_option = st.sidebar.selectbox("Symbol Source", _source_options)
+# ── Symbol Selection ─────────────────────────────────────────────────────
+st.sidebar.subheader("🌍 Ticker Finder")
 
 if 'ta_ticker_list' not in st.session_state:
     st.session_state['ta_ticker_list'] = []
 
-if symbol_option == "Custom":
-    custom_symbols = st.sidebar.text_area(
-        "Enter symbols (comma-separated)",
-        value="AAPL,MSFT,GOOGL,AMZN,TSLA"
-    )
-    symbols_list = [s.strip().upper() for s in custom_symbols.split(",") if s.strip()]
-
-elif symbol_option == "FMP Exchange Lookup":
-    if not fmp_key:
-        st.sidebar.warning("Enter an FMP API Key above to use Exchange Lookup.")
-        symbols_list = []
-    else:
-        # ── Country ───────────────────────────────────────────────────────
-        _ALL_COUNTRIES = "🌍 ALL Countries"
-        _country_opts  = ["-- Select country --", _ALL_COUNTRIES] + sorted(COUNTRY_EXCHANGES.keys())
-        _sel_country   = st.sidebar.selectbox("Country", _country_opts, key="ta_country")
-
-        _sel_exc_codes  = []
-        _sel_exc_label  = None
-        _sel_exc_code   = None
-
-        if _sel_country == _ALL_COUNTRIES:
-            _sel_exc_codes = ["__ALL__"]
-            _sel_exc_label = "All Countries / All Exchanges"
-            st.sidebar.caption("Full global stock list (~90k tickers).")
-
-        elif _sel_country != "-- Select country --":
-            _exc_list   = COUNTRY_EXCHANGES[_sel_country]
-            _exc_labels = [lbl for _, lbl in _exc_list]
-            _all_lbl    = f"ALL ({len(_exc_list)} exchanges)"
-            _sel_exc_label = st.sidebar.selectbox(
-                "Exchange", [_all_lbl] + _exc_labels, key="ta_exchange"
-            )
-            if _sel_exc_label == _all_lbl:
-                _sel_exc_codes = [c for c, _ in _exc_list]
-            else:
-                _sel_exc_code  = next(c for c, l in _exc_list if l == _sel_exc_label)
-                _sel_exc_codes = [_sel_exc_code]
-                _sfx = EXCHANGE_SUFFIX.get(_sel_exc_code, "")
-                st.sidebar.caption(f"Ticker suffix: `{_sfx if _sfx else '(none)'}`")
-
-        # ── Load Tickers ─────────────────────────────────────────────────
-        st.sidebar.markdown("**📋 Load Exchange Tickers**")
-        if not _sel_exc_codes:
-            st.sidebar.caption("⬆️ Select a country and exchange above first.")
-        else:
-            _ck   = f"ta_tickers_{'_'.join(sorted(_sel_exc_codes))}"
-            _sck  = f"ta_sectors_{'_'.join(sorted(_sel_exc_codes))}"
-            _loaded  = bool(st.session_state.get(_ck))
-            _sloaded = bool(st.session_state.get(_sck))
-
-            _lc, _rc = st.sidebar.columns(2)
-            if _lc.button("📋 Load Tickers", key="ta_load_tickers_btn",
-                           use_container_width=True, disabled=_loaded):
-                with st.spinner(f"Loading tickers for {_sel_exc_label}…"):
-                    try:
-                        if _sel_exc_codes == ["__ALL__"]:
-                            _raw = fetch_fmp_exchange_tickers("__ALL__", fmp_key)
-                            _tickers = _raw
-                        else:
-                            _combined = {}
-                            for _c in _sel_exc_codes:
-                                for _s, _n in fetch_fmp_exchange_tickers(_c, fmp_key):
-                                    _combined[_s] = _n
-                            _tickers = sorted(_combined.items(), key=lambda x: x[0])
-                        st.session_state[_ck] = _tickers
-                        st.rerun()
-                    except RuntimeError as _e:
-                        st.sidebar.error(str(_e))
-
-            if _rc.button("🔄 Reload", key="ta_reload_tickers_btn",
-                           use_container_width=True, disabled=not _loaded):
-                st.session_state.pop(_ck, None)
-                st.session_state.pop(_sck, None)
-                st.rerun()
-
-            if _loaded:
-                _tickers = st.session_state[_ck]
-                st.sidebar.caption(f"{len(_tickers):,} tickers loaded")
-
-                # ── Load Sectors ──────────────────────────────────────────
-                if not _sloaded:
-                    if st.sidebar.button("🏭 Load Sectors", key="ta_load_sectors_btn",
-                                          use_container_width=True):
-                        _sym_list = [s for s, _ in _tickers]
-                        _pb  = st.sidebar.progress(0, text="Fetching sectors…")
-                        _pt  = st.sidebar.empty()
-                        def _pcb(done, total):
-                            _pb.progress(done / total, text=f"Sectors: {done}/{total}")
-                            _pt.caption(f"{done}/{total} processed")
-                        _smap = fetch_ticker_sectors(_sym_list, fmp_key, progress_cb=_pcb)
-                        _pb.empty(); _pt.empty()
-                        st.session_state[_sck] = _smap
-                        st.rerun()
-                else:
-                    _smap  = st.session_state.get(_sck, {})
-                    _filled = sum(1 for v in _smap.values() if v)
-                    st.sidebar.caption(f"Sectors: {_filled:,} / {len(_smap):,} classified")
-
-                # ── Sector filter ─────────────────────────────────────────
-                _smap = st.session_state.get(_sck, {})
-                _avail_sectors = sorted({v for v in _smap.values() if v})
-                _sec_choice = st.sidebar.selectbox(
-                    "🏭 Filter by Sector",
-                    ["ALL"] + _avail_sectors,
-                    key="ta_sector_filter",
-                )
-                if _sec_choice == "ALL" or not _smap:
-                    _tickers_in_sec = _tickers
-                else:
-                    _tickers_in_sec = [(s, n) for s, n in _tickers
-                                       if _smap.get(s, "") == _sec_choice]
-
-                # ── Ticker dropdown ───────────────────────────────────────
-                _tick_opts = ["-- select --", "✅ Select All"] + \
-                             [f"{s}  —  {n}" for s, n in _tickers_in_sec[:500]]
-                _chosen = st.sidebar.selectbox(
-                    f"Select ticker ({len(_tickers_in_sec):,} available)",
-                    _tick_opts, key="ta_ticker_select",
-                )
-                if _chosen == "✅ Select All":
-                    if st.sidebar.button("➕ Add All to List", key="ta_add_all_btn",
-                                          use_container_width=True):
-                        _added = 0
-                        for _s, _ in _tickers_in_sec:
-                            if _s not in st.session_state['ta_ticker_list']:
-                                st.session_state['ta_ticker_list'].append(_s)
-                                _added += 1
-                        st.sidebar.success(f"Added {_added} ticker(s)")
-                elif _chosen != "-- select --":
-                    _csym = _chosen.split("  —  ")[0].strip()
-                    if st.sidebar.button("➕ Add to List", key="ta_add_btn",
-                                          use_container_width=True):
-                        if _csym not in st.session_state['ta_ticker_list']:
-                            st.session_state['ta_ticker_list'].append(_csym)
-                            st.sidebar.success(f"Added **{_csym}**")
-                        else:
-                            st.sidebar.info(f"**{_csym}** already in list")
-            else:
-                st.sidebar.caption("Click **Load Tickers** to browse listed stocks.")
-
-        # ── Current list ─────────────────────────────────────────────────
-        if st.session_state['ta_ticker_list']:
-            st.sidebar.markdown(
-                "**Tickers to analyse:**  " +
-                " · ".join(f"`{t}`" for t in st.session_state['ta_ticker_list'])
-            )
-            if st.sidebar.button("🗑️ Clear list", key="ta_clear_list"):
-                st.session_state['ta_ticker_list'] = []
-                st.rerun()
-
-        symbols_list = list(dict.fromkeys(st.session_state['ta_ticker_list']))
-
+if not _fmp_module_ok:
+    st.sidebar.warning("canslim_module not found — using custom entry only.")
+elif not fmp_key:
+    st.sidebar.caption("⬆️ Enter an FMP API key above to use the Exchange Lookup.")
 else:
-    @st.cache_data
-    def get_sp500_symbols():
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        try:
-            response = requests.get(
-                'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
-                headers=headers, timeout=10
-            )
-            response.raise_for_status()
-            sp500 = pd.read_html(io.StringIO(response.text))[0]
-            sp500['Symbol'] = sp500['Symbol'].str.replace('.', '-')
-            return sp500['Symbol'].unique().tolist()
-        except Exception as e:
-            st.error(f"Failed to fetch S&P 500 symbols: {str(e)}")
-            return []
+    # ── Country ───────────────────────────────────────────────────────────
+    _ALL_COUNTRIES = "🌍 ALL Countries"
+    _country_opts  = ["-- Select country --", _ALL_COUNTRIES] + sorted(COUNTRY_EXCHANGES.keys())
+    _sel_country   = st.sidebar.selectbox("Country", _country_opts, key="ta_country")
 
-    sp500_symbols = get_sp500_symbols()
-    if symbol_option == "S&P 500 (first 20)":
-        symbols_list = sp500_symbols[:20]
+    _sel_exc_codes = []
+    _sel_exc_label = None
+    _sel_exc_code  = None
+
+    if _sel_country == _ALL_COUNTRIES:
+        _sel_exc_codes = ["__ALL__"]
+        _sel_exc_label = "All Countries / All Exchanges"
+        st.sidebar.caption("Full global stock list (~90k tickers).")
+
+    elif _sel_country != "-- Select country --":
+        _exc_list   = COUNTRY_EXCHANGES[_sel_country]
+        _exc_labels = [lbl for _, lbl in _exc_list]
+        _all_lbl    = f"ALL ({len(_exc_list)} exchanges)"
+        _sel_exc_label = st.sidebar.selectbox(
+            "Exchange", [_all_lbl] + _exc_labels, key="ta_exchange"
+        )
+        if _sel_exc_label == _all_lbl:
+            _sel_exc_codes = [c for c, _ in _exc_list]
+        else:
+            _sel_exc_code  = next(c for c, l in _exc_list if l == _sel_exc_label)
+            _sel_exc_codes = [_sel_exc_code]
+            _sfx = EXCHANGE_SUFFIX.get(_sel_exc_code, "")
+            st.sidebar.caption(f"Ticker suffix: `{_sfx if _sfx else '(none)'}`")
+
+    # ── Load Tickers ──────────────────────────────────────────────────────
+    st.sidebar.markdown("**📋 Load Exchange Tickers**")
+    if not _sel_exc_codes:
+        st.sidebar.caption("⬆️ Select a country and exchange above first.")
     else:
-        symbols_list = sp500_symbols[:50]
+        _ck      = f"ta_tickers_{'_'.join(sorted(_sel_exc_codes))}"
+        _sck     = f"ta_sectors_{'_'.join(sorted(_sel_exc_codes))}"
+        _loaded  = bool(st.session_state.get(_ck))
+        _sloaded = bool(st.session_state.get(_sck))
+
+        _lc, _rc = st.sidebar.columns(2)
+        if _lc.button("📋 Load Tickers", key="ta_load_tickers_btn",
+                       use_container_width=True, disabled=_loaded):
+            with st.spinner(f"Loading tickers for {_sel_exc_label}…"):
+                try:
+                    if _sel_exc_codes == ["__ALL__"]:
+                        _tickers = fetch_fmp_exchange_tickers("__ALL__", fmp_key)
+                    else:
+                        _combined = {}
+                        for _c in _sel_exc_codes:
+                            for _s, _n in fetch_fmp_exchange_tickers(_c, fmp_key):
+                                _combined[_s] = _n
+                        _tickers = sorted(_combined.items(), key=lambda x: x[0])
+                    st.session_state[_ck] = _tickers
+                    st.rerun()
+                except RuntimeError as _e:
+                    st.sidebar.error(str(_e))
+
+        if _rc.button("🔄 Reload", key="ta_reload_tickers_btn",
+                       use_container_width=True, disabled=not _loaded):
+            st.session_state.pop(_ck, None)
+            st.session_state.pop(_sck, None)
+            st.rerun()
+
+        if _loaded:
+            _tickers = st.session_state[_ck]
+            st.sidebar.caption(f"{len(_tickers):,} tickers loaded from FMP")
+
+            # ── Load Sectors ──────────────────────────────────────────────
+            if not _sloaded:
+                if st.sidebar.button("🏭 Load Sectors", key="ta_load_sectors_btn",
+                                      use_container_width=True):
+                    _sym_list = [s for s, _ in _tickers]
+                    _pb = st.sidebar.progress(0, text="Fetching sectors…")
+                    _pt = st.sidebar.empty()
+                    def _pcb(done, total):
+                        _pb.progress(done / total, text=f"Sectors: {done}/{total}")
+                        _pt.caption(f"{done}/{total} processed")
+                    _smap = fetch_ticker_sectors(_sym_list, fmp_key, progress_cb=_pcb)
+                    _pb.empty(); _pt.empty()
+                    st.session_state[_sck] = _smap
+                    st.rerun()
+            else:
+                _smap   = st.session_state.get(_sck, {})
+                _filled = sum(1 for v in _smap.values() if v)
+                st.sidebar.caption(f"Sectors: {_filled:,} / {len(_smap):,} classified")
+
+            # ── Sector filter ──────────────────────────────────────────────
+            _smap          = st.session_state.get(_sck, {})
+            _avail_sectors = sorted({v for v in _smap.values() if v})
+            _sec_choice    = st.sidebar.selectbox(
+                "🏭 Filter by Sector", ["ALL"] + _avail_sectors, key="ta_sector_filter"
+            )
+            _tickers_in_sec = (
+                _tickers if (_sec_choice == "ALL" or not _smap)
+                else [(s, n) for s, n in _tickers if _smap.get(s, "") == _sec_choice]
+            )
+
+            # ── Ticker dropdown ────────────────────────────────────────────
+            _tick_opts = ["-- select --", "✅ Select All"] + \
+                         [f"{s}  —  {n}" for s, n in _tickers_in_sec[:500]]
+            _chosen = st.sidebar.selectbox(
+                f"Select ticker ({len(_tickers_in_sec):,} available)",
+                _tick_opts, key="ta_ticker_select"
+            )
+            if _chosen == "✅ Select All":
+                if st.sidebar.button("➕ Add All to List", key="ta_add_all_btn",
+                                      use_container_width=True):
+                    _added = sum(
+                        1 for _s, _ in _tickers_in_sec
+                        if _s not in st.session_state['ta_ticker_list']
+                        and not st.session_state['ta_ticker_list'].append(_s)
+                    )
+                    st.sidebar.success(f"Added {_added} ticker(s)")
+            elif _chosen != "-- select --":
+                _csym = _chosen.split("  —  ")[0].strip()
+                if st.sidebar.button("➕ Add to List", key="ta_add_btn",
+                                      use_container_width=True):
+                    if _csym not in st.session_state['ta_ticker_list']:
+                        st.session_state['ta_ticker_list'].append(_csym)
+                        st.sidebar.success(f"Added **{_csym}**")
+                    else:
+                        st.sidebar.info(f"**{_csym}** already in list")
+        else:
+            st.sidebar.caption("Click **Load Tickers** to browse listed stocks.")
+
+# ── Current ticker list & fallback custom entry ───────────────────────────
+if st.session_state['ta_ticker_list']:
+    st.sidebar.markdown(
+        "**Tickers to analyse:**  " +
+        " · ".join(f"`{t}`" for t in st.session_state['ta_ticker_list'])
+    )
+    if st.sidebar.button("🗑️ Clear list", key="ta_clear_list"):
+        st.session_state['ta_ticker_list'] = []
+        st.rerun()
+
+st.sidebar.divider()
+st.sidebar.subheader("🎯 Or enter symbols manually")
+_default_custom = (", ".join(st.session_state['ta_ticker_list'])
+                   if st.session_state['ta_ticker_list'] else "AAPL,MSFT,GOOGL,AMZN,TSLA")
+custom_symbols = st.sidebar.text_area(
+    "Symbols (comma-separated)", value=_default_custom, height=68, key="ta_custom_symbols"
+)
+symbols_list = list(dict.fromkeys(
+    [s.strip().upper() for s in custom_symbols.replace("\n", ",").split(",") if s.strip()]
+))
 
 # Scoring Thresholds
 st.sidebar.subheader("🎯 Scoring Thresholds")
