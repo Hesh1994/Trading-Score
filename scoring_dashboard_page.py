@@ -35,6 +35,7 @@ st.set_page_config(
 )
 
 st.title("📊 Technical Analysis Stock Scoring System")
+st.caption("v2026-06-25j — indicators multiselect")
 
 # ============================================================================
 # SIDEBAR: CONFIGURATION
@@ -250,16 +251,22 @@ else:
 indicator_config = _copy.deepcopy(st.session_state['ind_config_store'])
 
 # Section 1: Select which indicators to include
+_all_ind_keys = list(INDICATORS_CONFIG.keys())
+_label_to_key = {indicator_config[k]['label']: k for k in _all_ind_keys}
+_default_labels = [indicator_config[k]['label'] for k in _all_ind_keys if indicator_config[k].get('enabled', True)]
+
+_selected_labels = st.sidebar.multiselect(
+    "Select indicators",
+    options=[indicator_config[k]['label'] for k in _all_ind_keys],
+    default=_default_labels,
+    key="indicators_multiselect"
+)
+
 included_indicators = {}
-for ind_key in list(INDICATORS_CONFIG.keys()):
-    cfg = indicator_config[ind_key]
-    included = st.sidebar.checkbox(
-        cfg['label'],
-        value=cfg['enabled'],
-        key=f"{ind_key}_included"
-    )
-    indicator_config[ind_key]['enabled'] = included
-    if included:
+for ind_key in _all_ind_keys:
+    enabled = indicator_config[ind_key]['label'] in _selected_labels
+    indicator_config[ind_key]['enabled'] = enabled
+    if enabled:
         included_indicators[ind_key] = indicator_config[ind_key]
 
 # Section 2: Configure selected indicators
