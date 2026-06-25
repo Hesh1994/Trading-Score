@@ -37,7 +37,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-25q — unified single results table")
+    st.caption("v2026-06-25r — scores in ticker table")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -401,18 +401,25 @@ with _btn_col:
 
 # ── Editable table with remove checkboxes ────────────────────────────────────
 if st.session_state['ta_ticker_list']:
-    _tbl = pd.DataFrame({
+    _scores = st.session_state.get('ta_scores', {})
+    _tbl_data = {
         'Remove': [False] * len(st.session_state['ta_ticker_list']),
         'Ticker': st.session_state['ta_ticker_list'],
-    })
+    }
+    if _scores:
+        _tbl_data['Total Score'] = [_scores.get(t, '') for t in st.session_state['ta_ticker_list']]
+    _tbl = pd.DataFrame(_tbl_data)
+    _col_cfg = {
+        'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
+        'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
+    }
+    if _scores:
+        _col_cfg['Total Score'] = st.column_config.NumberColumn('Total Score', disabled=True, format="%.2f")
     _edited = st.data_editor(
         _tbl,
         use_container_width=True,
         hide_index=True,
-        column_config={
-            'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
-            'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
-        },
+        column_config=_col_cfg,
         key="ta_ticker_table",
     )
     _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
@@ -532,7 +539,9 @@ if _run_btn_header:
             
             # Convert to display DataFrame
             results_df = results_to_dataframe(results)
-            
+            # Save per-ticker scores for the ticker table
+            st.session_state['ta_scores'] = {r['ticker']: round(r['net_score'], 2) for r in results}
+
         except Exception as e:
             st.error(f"Error during scoring: {str(e)}")
             import traceback
@@ -621,23 +630,6 @@ if _run_btn_header:
         with col4:
             st.metric("Hold Signals", hold_count, delta_color="off")
 
-        st.header("🎯 Scoring Results")
-        # Build one unified table: Ticker + Total Score + one column per indicator
-        _unified_rows = []
-        for _r in results:
-            _row = {"Ticker": _r["ticker"], "Total Score": round(_r["net_score"], 2)}
-            for _ind_key, _sig in _r.get("signals", {}).items():
-                if "error" not in _sig:
-                    if _sig.get("buy"):
-                        _cell = "✅ BUY"
-                    elif _sig.get("sell"):
-                        _cell = "⛔ SELL"
-                    else:
-                        _cell = "—"
-                    _row[_ind_key.upper()] = _cell
-            _unified_rows.append(_row)
-        _unified_df = pd.DataFrame(_unified_rows).sort_values("Total Score", ascending=False).reset_index(drop=True)
-        st.dataframe(_unified_df, use_container_width=True)
     
     # Export to CSV
     st.header("📥 Export Results")
