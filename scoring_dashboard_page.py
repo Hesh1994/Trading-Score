@@ -19,7 +19,8 @@ from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 try:
     from canslim_module import (COUNTRY_EXCHANGES, EXCHANGE_SUFFIX,
                                 fetch_fmp_exchange_tickers, fetch_ticker_sectors,
-                                fetch_price_data_fmp, fetch_price_universe_fmp)
+                                fetch_price_data_fmp, fetch_price_universe_fmp,
+                                score_canslim_universe)
     _fmp_module_ok = True
 except ImportError:
     _fmp_module_ok = False
@@ -37,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-25t — rename to Total Technical Score")
+    st.caption("v2026-06-25u — CANSLIM score column in ticker table")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -402,12 +403,15 @@ with _btn_col:
 # ── Editable table with remove checkboxes ────────────────────────────────────
 if st.session_state['ta_ticker_list']:
     _scores = st.session_state.get('ta_scores', {})
+    _canslim_scores = st.session_state.get('ta_canslim_scores', {})
     _tbl_data = {
         'Remove': [False] * len(st.session_state['ta_ticker_list']),
         'Ticker': st.session_state['ta_ticker_list'],
     }
     if _scores:
         _tbl_data['Total Technical Score'] = [_scores.get(t, '') for t in st.session_state['ta_ticker_list']]
+    if _canslim_scores:
+        _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t, '') for t in st.session_state['ta_ticker_list']]
     _tbl = pd.DataFrame(_tbl_data)
     _col_cfg = {
         'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
@@ -415,12 +419,15 @@ if st.session_state['ta_ticker_list']:
     }
     if _scores:
         _col_cfg['Total Technical Score'] = st.column_config.NumberColumn('Total Technical Score', disabled=True, format="%.2f")
+    if _canslim_scores:
+        _col_cfg['CANSLIM Score'] = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format="%.2f")
+    _tbl_key = f"ta_ticker_table_{'c' if _canslim_scores else ''}{'s' if _scores else ''}plain"
     _edited = st.data_editor(
         _tbl,
         use_container_width=True,
         hide_index=True,
         column_config=_col_cfg,
-        key=f"ta_ticker_table_{'scored' if _scores else 'plain'}",
+        key=_tbl_key,
     )
     _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
     if _kept != st.session_state['ta_ticker_list']:
@@ -539,7 +546,7 @@ if _run_btn_header:
             
             # Convert to display DataFrame
             results_df = results_to_dataframe(results)
-            # Save per-ticker scores for the ticker table
+            # Save per-ticker TA scores for the ticker table
             st.session_state['ta_scores'] = {r['ticker']: round(r['net_score'], 2) for r in results}
 
         except Exception as e:
@@ -548,6 +555,17 @@ if _run_btn_header:
             st.error(traceback.format_exc())
             st.stop()
     
+    # ========== CANSLIM SCORING (same tickers) ==========
+    if fmp_key and _fmp_module_ok:
+        with st.spinner("📊 Calculating CANSLIM scores…"):
+            try:
+                _canslim_results = score_canslim_universe(symbols_list, fmp_api_key=fmp_key)
+                st.session_state['ta_canslim_scores'] = {
+                    r['symbol']: round(r['score'], 2) for r in _canslim_results
+                }
+            except Exception:
+                st.session_state['ta_canslim_scores'] = {}
+
     # ========== DISPLAY RESULTS ==========
     st.success("✅ Scoring complete!")
 
