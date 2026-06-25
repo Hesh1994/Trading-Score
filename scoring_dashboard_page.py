@@ -41,12 +41,17 @@ st.title("📊 Technical Analysis Stock Scoring System")
 
 st.sidebar.header("⚙️ Configuration")
 
-# FMP key is set on the CANSLIM Scoring page and shared via session state
-fmp_key = st.session_state.get('canslim_fmp_key', '')
+# ── FMP API Key (shared across all pages via session state) ───────────────
+st.sidebar.subheader("🔑 FMP API Key")
+fmp_key = st.sidebar.text_input(
+    "FMP API Key",
+    type="password",
+    placeholder="Enter once — used by all pages",
+    key="shared_fmp_key",
+    help="Get a free key at financialmodelingprep.com — used for Exchange Lookup and CANSLIM data."
+)
 if fmp_key:
-    st.sidebar.caption("🔑 FMP key active (set on CANSLIM Scoring page)")
-else:
-    st.sidebar.caption("🔑 No FMP key — go to CANSLIM Scoring page to set one (needed for Exchange Lookup)")
+    st.sidebar.success("FMP key set — available on all pages")
 
 # Data Range
 st.sidebar.subheader("📅 Data Range")

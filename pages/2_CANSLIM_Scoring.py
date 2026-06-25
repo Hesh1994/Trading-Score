@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25h — ALL countries option")
+st.caption("v2026-06-25i — FMP key centralised on TA dashboard")
 
 # ============================================================================
 # HELPERS
@@ -62,18 +62,12 @@ def _fmt_criterion(label, val):
 
 st.sidebar.header("⚙️ CANSLIM Configuration")
 
-st.sidebar.subheader("🔑 Data Source")
-fmp_key = st.sidebar.text_input(
-    "FMP API Key (optional)",
-    type="password",
-    placeholder="Leave blank to use yfinance",
-    key="canslim_fmp_key",
-    help="Get a free key at financialmodelingprep.com — provides cleaner fundamental data than yfinance."
-)
+# FMP key is entered once on the Technical Analysis Scoring page (sidebar)
+fmp_key = st.session_state.get('shared_fmp_key', '')
 if fmp_key:
-    st.sidebar.success("FMP key set — using FMP data")
+    st.sidebar.success("🔑 FMP key active")
 else:
-    st.sidebar.caption("No key — using yfinance")
+    st.sidebar.warning("🔑 No FMP key — enter it on the **Technical Analysis** page sidebar")
 
 # ============================================================================
 # SIDEBAR — TICKER FINDER
