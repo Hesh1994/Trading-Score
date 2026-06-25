@@ -633,11 +633,14 @@ def fetch_canslim_data_fmp(symbol, api_key):
     # ── Sector / industry ────────────────────────────────────────────────
     try:
         profile = _fmp_get("profile", api_key, {'symbol': sym})
-        if profile and isinstance(profile, list):
-            data['sector']   = profile[0].get('sector')   or ''
-            data['industry'] = profile[0].get('industry') or ''
+        if isinstance(profile, list) and profile:
+            p = profile[0]
+        elif isinstance(profile, dict):
+            p = profile
         else:
-            data['sector'] = data['industry'] = ''
+            p = {}
+        data['sector']   = p.get('sector')   or ''
+        data['industry'] = p.get('industry') or ''
     except Exception:
         data['sector'] = data['industry'] = ''
 
