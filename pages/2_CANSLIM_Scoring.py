@@ -36,7 +36,7 @@ st.caption(
     "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
     "Data via FMP API — needs at least 8 quarters / 6 years of history."
 )
-st.caption("v2026-06-25d — sector debug")
+st.caption("v2026-06-25e — individual sector calls with progress")
 
 # ============================================================================
 # HELPERS
@@ -138,23 +138,24 @@ else:
             if st.sidebar.button("🏭 Load Sectors", key="load_sectors_btn",
                                   use_container_width=True):
                 sym_list = [s for s, _ in tickers]
-                with st.spinner(f"Fetching sector data for {len(sym_list):,} tickers…"):
-                    sector_map = fetch_ticker_sectors(sym_list, fmp_key)
-                    st.session_state[sector_cache_key] = sector_map
-                    st.session_state[sector_cache_key + "_debug"] = {
-                        "total": len(sym_list),
-                        "with_sector": sum(1 for v in sector_map.values() if v),
-                        "sample": {k: v for k, v in list(sector_map.items())[:5]},
-                    }
+                prog_bar  = st.sidebar.progress(0, text="Fetching sectors…")
+                prog_text = st.sidebar.empty()
+
+                def _progress(done, total):
+                    prog_bar.progress(done / total,
+                                      text=f"Sectors: {done}/{total}")
+                    prog_text.caption(f"{done}/{total} tickers processed")
+
+                sector_map = fetch_ticker_sectors(sym_list, fmp_key,
+                                                  progress_cb=_progress)
+                prog_bar.empty()
+                prog_text.empty()
+                st.session_state[sector_cache_key] = sector_map
                 st.rerun()
         else:
             sector_map = st.session_state.get(sector_cache_key, {})
             filled = sum(1 for v in sector_map.values() if v)
-            st.sidebar.caption(f"Sectors: {filled:,} / {len(sector_map):,} tickers have sector data")
-            dbg = st.session_state.get(sector_cache_key + "_debug", {})
-            if dbg:
-                with st.sidebar.expander("🔍 Debug sector data"):
-                    st.write(dbg)
+            st.sidebar.caption(f"Sectors loaded: {filled:,} / {len(sector_map):,} tickers classified")
 
         # ── Sector filter (before ticker list) ───────────────────────────
         sector_map = st.session_state.get(sector_cache_key, {})

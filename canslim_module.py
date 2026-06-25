@@ -479,23 +479,28 @@ def _fmp_get(endpoint, api_key, params=None):
     return data
 
 
-def fetch_ticker_sectors(symbol_list, api_key, batch_size=50):
+def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None):
     """
-    Fetch sector for a list of symbols using FMP /stable/profile in batches.
-    Returns dict {symbol: sector_string}.  Missing / failed symbols get ''.
+    Fetch sector for every symbol via individual FMP /stable/profile calls.
+    progress_cb(done, total) is called after each call if provided.
+    Returns dict {symbol: sector_string}.
     """
     sector_map = {}
-    for i in range(0, len(symbol_list), batch_size):
-        batch = symbol_list[i:i + batch_size]
+    total = len(symbol_list)
+    for i, sym in enumerate(symbol_list):
         try:
-            profiles = _fmp_get("profile", api_key, {"symbol": ",".join(batch)})
-            items = profiles if isinstance(profiles, list) else ([profiles] if isinstance(profiles, dict) else [])
-            for p in items:
-                sym = p.get("symbol", "")
-                if sym:
-                    sector_map[sym] = p.get("sector") or ""
+            profile = _fmp_get("profile", api_key, {"symbol": sym})
+            if isinstance(profile, list) and profile:
+                p = profile[0]
+            elif isinstance(profile, dict) and profile:
+                p = profile
+            else:
+                p = {}
+            sector_map[sym] = p.get("sector") or ""
         except Exception:
-            pass
+            sector_map[sym] = ""
+        if progress_cb:
+            progress_cb(i + 1, total)
     return sector_map
 
 
