@@ -35,7 +35,7 @@ st.set_page_config(
 )
 
 st.title("📊 Technical Analysis Stock Scoring System")
-st.caption("v2026-06-25j — indicators multiselect")
+st.caption("v2026-06-25k — indicators list expanders")
 
 # ============================================================================
 # SIDEBAR: CONFIGURATION
@@ -269,107 +269,92 @@ for ind_key in _all_ind_keys:
     if enabled:
         included_indicators[ind_key] = indicator_config[ind_key]
 
-# Section 2: Configure selected indicators
+# Section 2: Configure selected indicators — one expander per indicator
 if included_indicators:
     st.sidebar.subheader("⚙️ Configure Indicators")
 
-    selected_indicator = st.sidebar.selectbox(
-        "Select indicator to configure",
-        options=list(included_indicators.keys()),
-        format_func=lambda x: indicator_config[x]['label'],
-        key="indicator_selector"
-    )
+    for selected_indicator, ind_cfg in included_indicators.items():
+        with st.sidebar.expander(ind_cfg['label'], expanded=False):
+            # Interval selector
+            interval_options = ["Daily", "Weekly", "Monthly"]
+            current_interval = ind_cfg.get('interval', 'daily').capitalize()
+            if current_interval not in interval_options:
+                current_interval = "Daily"
+            selected_interval = st.selectbox(
+                "Interval",
+                interval_options,
+                index=interval_options.index(current_interval),
+                key=f"{selected_indicator}_interval"
+            )
+            indicator_config[selected_indicator]['interval'] = selected_interval.lower()
+            if selected_indicator == 'fear_greed':
+                st.caption("Calculated from OHLCV data (needs 252+ bars). Components: Momentum, RSI, Volatility, Volume Breadth.")
 
-    if selected_indicator:
-        ind_cfg = indicator_config[selected_indicator]
-        st.sidebar.write(f"**{ind_cfg['label']}**")
+            # Parameters
+            st.write("Parameters:")
+            params = ind_cfg['parameters'].copy()
+            for param_key, param_value in params.items():
+                if selected_indicator == "rsi" and param_key in ("buy_threshold", "sell_threshold"):
+                    continue
+                if isinstance(param_value, int):
+                    new_value = st.number_input(
+                        param_key.replace('_', ' ').title(),
+                        min_value=1,
+                        value=int(param_value),
+                        step=1,
+                        key=f"{selected_indicator}_{param_key}"
+                    )
+                    indicator_config[selected_indicator]['parameters'][param_key] = new_value
+                elif isinstance(param_value, float):
+                    new_value = st.number_input(
+                        param_key.replace('_', ' ').title(),
+                        min_value=0.1,
+                        value=float(param_value),
+                        step=0.1,
+                        key=f"{selected_indicator}_{param_key}"
+                    )
+                    indicator_config[selected_indicator]['parameters'][param_key] = new_value
 
-        # Interval selector per indicator
-        interval_options = ["Daily", "Weekly", "Monthly"]
-        current_interval = ind_cfg.get('interval', 'daily').capitalize()
-        if current_interval not in interval_options:
-            current_interval = "Daily"
-        selected_interval = st.sidebar.selectbox(
-            "Interval",
-            interval_options,
-            index=interval_options.index(current_interval),
-            key=f"{selected_indicator}_interval"
-        )
-        indicator_config[selected_indicator]['interval'] = selected_interval.lower()
-        if selected_indicator == 'fear_greed':
-            st.sidebar.caption("Calculated from OHLCV data (needs 252+ bars). Components: Momentum, RSI, Volatility, Volume Breadth.")
+            # RSI buy/sell thresholds
+            if selected_indicator == "rsi":
+                st.write("Buy / Sell Rules:")
+                col1, col2 = st.columns(2)
+                with col1:
+                    buy_thresh = st.number_input(
+                        "Oversold (<)",
+                        min_value=1.0, max_value=99.0,
+                        value=float(ind_cfg["parameters"].get("buy_threshold", 30.0)),
+                        step=1.0, key="rsi_buy_threshold",
+                    )
+                    indicator_config["rsi"]["parameters"]["buy_threshold"] = buy_thresh
+                with col2:
+                    sell_thresh = st.number_input(
+                        "Overbought (>)",
+                        min_value=1.0, max_value=99.0,
+                        value=float(ind_cfg["parameters"].get("sell_threshold", 70.0)),
+                        step=1.0, key="rsi_sell_threshold",
+                    )
+                    indicator_config["rsi"]["parameters"]["sell_threshold"] = sell_thresh
 
-        # Show parameters
-        st.sidebar.write("Parameters:")
-        params = ind_cfg['parameters'].copy()
-
-        for param_key, param_value in params.items():
-            # buy_threshold / sell_threshold for RSI are handled by the dedicated block below
-            if selected_indicator == "rsi" and param_key in ("buy_threshold", "sell_threshold"):
-                continue
-            if isinstance(param_value, int):
-                new_value = st.sidebar.number_input(
-                    param_key.replace('_', ' ').title(),
-                    min_value=1,
-                    value=int(param_value),
-                    step=1,
-                    key=f"{selected_indicator}_{param_key}"
-                )
-                indicator_config[selected_indicator]['parameters'][param_key] = new_value
-            elif isinstance(param_value, float):
-                new_value = st.sidebar.number_input(
-                    param_key.replace('_', ' ').title(),
-                    min_value=0.1,
-                    value=float(param_value),
-                    step=0.1,
-                    key=f"{selected_indicator}_{param_key}"
-                )
-                indicator_config[selected_indicator]['parameters'][param_key] = new_value
-
-        # Buy / sell rules (threshold inputs) — RSI only for now
-        if selected_indicator == "rsi":
-            st.sidebar.write("Buy / Sell Rules:")
-            col1, col2 = st.sidebar.columns(2)
+            # Buy/sell scores
+            st.write("Scoring:")
+            col1, col2 = st.columns(2)
             with col1:
-                buy_thresh = st.number_input(
-                    "Oversold threshold (<)",
-                    min_value=1.0,
-                    max_value=99.0,
-                    value=float(ind_cfg["parameters"].get("buy_threshold", 30.0)),
-                    step=1.0,
-                    key="rsi_buy_threshold",
+                buy_score = st.number_input(
+                    "Buy Score",
+                    value=float(ind_cfg['buy_score']),
+                    step=0.5,
+                    key=f"{selected_indicator}_buy_score"
                 )
-                indicator_config["rsi"]["parameters"]["buy_threshold"] = buy_thresh
+                indicator_config[selected_indicator]['buy_score'] = buy_score
             with col2:
-                sell_thresh = st.number_input(
-                    "Overbought threshold (>)",
-                    min_value=1.0,
-                    max_value=99.0,
-                    value=float(ind_cfg["parameters"].get("sell_threshold", 70.0)),
-                    step=1.0,
-                    key="rsi_sell_threshold",
+                sell_score = st.number_input(
+                    "Sell Score",
+                    value=float(ind_cfg['sell_score']),
+                    step=0.5,
+                    key=f"{selected_indicator}_sell_score"
                 )
-                indicator_config["rsi"]["parameters"]["sell_threshold"] = sell_thresh
-
-        # Show buy/sell scores
-        st.sidebar.write("Scoring:")
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            buy_score = st.number_input(
-                "Buy Score",
-                value=float(ind_cfg['buy_score']),
-                step=0.5,
-                key=f"{selected_indicator}_buy_score"
-            )
-            indicator_config[selected_indicator]['buy_score'] = buy_score
-        with col2:
-            sell_score = st.number_input(
-                "Sell Score",
-                value=float(ind_cfg['sell_score']),
-                step=0.5,
-                key=f"{selected_indicator}_sell_score"
-            )
-            indicator_config[selected_indicator]['sell_score'] = sell_score
+                indicator_config[selected_indicator]['sell_score'] = sell_score
 
 # ── Persist the updated config for the next rerun ─────────────────────────────
 st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
