@@ -37,7 +37,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-25o — button vertically aligned")
+    st.caption("v2026-06-25p — results table single column")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -622,10 +622,8 @@ if _run_btn_header:
             st.metric("Hold Signals", hold_count, delta_color="off")
 
         st.header("🎯 Scoring Results")
-        fmt = {"Buy Score": "{:.2f}", "Sell Score": "{:.2f}", "Net Score": "{:.2f}"}
-        if "Fear & Greed" in results_df.columns:
-            fmt["Fear & Greed"] = "{:.1f}"
-        st.dataframe(results_df.style.format(fmt), use_container_width=True)
+        _display_df = results_df[["Ticker", "Net Score"]].rename(columns={"Net Score": "Total Score"})
+        st.dataframe(_display_df.style.format({"Total Score": "{:.2f}"}), use_container_width=True)
     
     # Detailed signals per stock
     st.header("🔍 Detailed Signals per Stock")
