@@ -35,7 +35,7 @@ st.set_page_config(
 )
 
 st.title("📊 Technical Analysis Stock Scoring System")
-st.caption("v2026-06-25k — indicators list expanders")
+st.caption("v2026-06-25l — removed scoring threshold UI")
 
 # ============================================================================
 # SIDEBAR: CONFIGURATION
@@ -222,13 +222,8 @@ if st.session_state['ta_ticker_list']:
         f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected — manage in main area"
     )
 
-# Scoring Thresholds
-st.sidebar.subheader("🎯 Scoring Thresholds")
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    buy_threshold = st.number_input("Buy Threshold", value=3.0, min_value=0.0, step=0.5)
-with col2:
-    sell_threshold = st.number_input("Sell Threshold", value=3.0, min_value=0.0, step=0.5)
+buy_threshold = 3.0
+sell_threshold = 3.0
 
 # Indicator Configuration
 st.sidebar.subheader("📈 Indicators to Include")
