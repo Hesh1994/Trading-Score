@@ -18,7 +18,8 @@ from scoring_module import score_universe, results_to_dataframe
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 try:
     from canslim_module import (COUNTRY_EXCHANGES, EXCHANGE_SUFFIX,
-                                fetch_fmp_exchange_tickers, fetch_ticker_sectors)
+                                fetch_fmp_exchange_tickers, fetch_ticker_sectors,
+                                fetch_price_universe_fmp)
     _fmp_module_ok = True
 except ImportError:
     _fmp_module_ok = False
@@ -387,10 +388,12 @@ st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 # ============================================================================
 
 if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True):
-    with st.spinner("📥 Downloading data..."):
-        try:
-            INTERVAL_YF = {'daily': '1d', 'weekly': '1wk', 'monthly': '1mo'}
 
+    _use_fmp = bool(fmp_key and _fmp_module_ok)
+    _source_label = "FMP API" if _use_fmp else "yfinance"
+
+    with st.spinner(f"📥 Downloading price data via {_source_label}…"):
+        try:
             # Collect unique intervals needed by enabled indicators
             intervals_needed = set()
             for ind_key, cfg in indicator_config.items():
@@ -399,52 +402,69 @@ if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=Tr
 
             tickers_data_by_interval = {}
 
-            for interval in intervals_needed:
-                df_raw = yf.download(
-                    tickers=symbols_list,
-                    start=start_date,
-                    end=end_date,
-                    interval=INTERVAL_YF[interval],
-                    progress=False,
-                    auto_adjust=False
-                )
+            if _use_fmp:
+                # ── FMP path: one call per symbol per interval ────────────
+                for interval in intervals_needed:
+                    tickers_dict = {}
+                    _prog = st.progress(0, text=f"Fetching {interval} prices via FMP…")
+                    for _i, sym in enumerate(symbols_list):
+                        df = fetch_price_data_fmp(sym, start_date, end_date,
+                                                  fmp_key, interval)
+                        if df is not None and not df.empty:
+                            tickers_dict[sym] = df
+                        _prog.progress((_i + 1) / len(symbols_list),
+                                       text=f"FMP {interval}: {_i+1}/{len(symbols_list)} — {sym}")
+                    _prog.empty()
+                    if tickers_dict:
+                        tickers_data_by_interval[interval] = tickers_dict
 
-                if df_raw.empty:
-                    continue
-
-                tickers_dict = {}
-
-                if len(symbols_list) == 1:
-                    ticker = symbols_list[0]
-                    ticker_df = df_raw.copy()
-                    ticker_df.columns = ticker_df.columns.str.lower()
-                    ticker_df = ticker_df.dropna(subset=['close'])
-                    if len(ticker_df) > 0:
-                        tickers_dict[ticker] = ticker_df
-                else:
-                    for ticker in symbols_list:
-                        try:
-                            ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
-                            ticker_df.columns = ticker_df.columns.str.lower()
-                            ticker_df = ticker_df.dropna(subset=['close'])
-                            if len(ticker_df) > 0:
-                                tickers_dict[ticker] = ticker_df
-                        except (KeyError, TypeError):
-                            continue
-
-                tickers_data_by_interval[interval] = tickers_dict
+            else:
+                # ── yfinance path (fallback) ──────────────────────────────
+                INTERVAL_YF = {'daily': '1d', 'weekly': '1wk', 'monthly': '1mo'}
+                for interval in intervals_needed:
+                    df_raw = yf.download(
+                        tickers=symbols_list,
+                        start=start_date,
+                        end=end_date,
+                        interval=INTERVAL_YF[interval],
+                        progress=False,
+                        auto_adjust=False
+                    )
+                    if df_raw.empty:
+                        continue
+                    tickers_dict = {}
+                    if len(symbols_list) == 1:
+                        ticker = symbols_list[0]
+                        ticker_df = df_raw.copy()
+                        ticker_df.columns = ticker_df.columns.str.lower()
+                        ticker_df = ticker_df.dropna(subset=['close'])
+                        if len(ticker_df) > 0:
+                            tickers_dict[ticker] = ticker_df
+                    else:
+                        for ticker in symbols_list:
+                            try:
+                                ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
+                                ticker_df.columns = ticker_df.columns.str.lower()
+                                ticker_df = ticker_df.dropna(subset=['close'])
+                                if len(ticker_df) > 0:
+                                    tickers_dict[ticker] = ticker_df
+                            except (KeyError, TypeError):
+                                continue
+                    if tickers_dict:
+                        tickers_data_by_interval[interval] = tickers_dict
 
             if not tickers_data_by_interval:
-                st.error("No data downloaded. Check your symbols and date range.")
+                st.error(f"No price data returned via {_source_label}. Check symbols and date range.")
                 st.stop()
 
-            # Check at least one ticker has data
             all_tickers_found = set()
             for d in tickers_data_by_interval.values():
                 all_tickers_found.update(d.keys())
             if not all_tickers_found:
-                st.error(f"No valid data for selected symbols. Tried: {', '.join(symbols_list[:5])}")
+                st.error(f"No valid data for: {', '.join(symbols_list[:5])}")
                 st.stop()
+
+            st.success(f"✅ Price data fetched via {_source_label} for {len(all_tickers_found)} ticker(s)")
 
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")

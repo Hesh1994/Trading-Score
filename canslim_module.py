@@ -463,6 +463,109 @@ def compute_canslim(data):
 
 
 # ============================================================================
+# FMP PRICE DATA
+# ============================================================================
+
+def fetch_price_data_fmp(symbol, start_date, end_date, api_key, interval='daily'):
+    """
+    Fetch OHLCV data for one symbol from FMP stable API.
+
+    Parameters
+    ----------
+    symbol     : str   e.g. 'AAPL' or '2222.SR'
+    start_date : str or datetime.date  e.g. '2023-01-01'
+    end_date   : str or datetime.date
+    api_key    : str
+    interval   : 'daily' | 'weekly' | 'monthly'
+
+    Returns
+    -------
+    pandas.DataFrame with DatetimeIndex and lowercase columns:
+        open  high  low  close  adjclose  volume
+    Returns None on failure.
+    """
+    try:
+        data = requests.get(
+            f"{FMP_BASE}/historical-price-eod/full",
+            params={
+                'symbol':  symbol,
+                'from':    str(start_date),
+                'to':      str(end_date),
+                'apikey':  api_key,
+            },
+            timeout=20,
+        )
+        data.raise_for_status()
+        payload = data.json()
+    except Exception:
+        return None
+
+    # Response may be a dict with 'historical' key, or a list directly
+    if isinstance(payload, dict):
+        if 'Error Message' in payload:
+            return None
+        rows = payload.get('historical') or payload.get('data') or []
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        return None
+
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows)
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.set_index('date').sort_index()
+
+    # Normalise column names
+    df.columns = df.columns.str.lower()
+    rename = {'adjclose': 'adjclose', 'adj close': 'adjclose',
+              'adj_close': 'adjclose', 'adjusted_close': 'adjclose'}
+    df = df.rename(columns=rename)
+
+    keep = [c for c in ['open', 'high', 'low', 'close', 'adjclose', 'volume'] if c in df.columns]
+    df = df[keep].apply(pd.to_numeric, errors='coerce')
+
+    if 'close' not in df.columns or df.empty:
+        return None
+
+    # Resample for weekly / monthly
+    if interval == 'weekly':
+        df = df.resample('W').agg({
+            'open':     'first',
+            'high':     'max',
+            'low':      'min',
+            'close':    'last',
+            'adjclose': 'last',
+            'volume':   'sum',
+        }).dropna(subset=['close'])
+    elif interval == 'monthly':
+        df = df.resample('ME').agg({
+            'open':     'first',
+            'high':     'max',
+            'low':      'min',
+            'close':    'last',
+            'adjclose': 'last',
+            'volume':   'sum',
+        }).dropna(subset=['close'])
+
+    return df if not df.empty else None
+
+
+def fetch_price_universe_fmp(symbols, start_date, end_date, api_key, interval='daily'):
+    """
+    Fetch OHLCV for a list of symbols.
+    Returns dict {symbol: DataFrame} — symbols with no data are omitted.
+    """
+    result = {}
+    for sym in symbols:
+        df = fetch_price_data_fmp(sym, start_date, end_date, api_key, interval)
+        if df is not None and not df.empty:
+            result[sym] = df
+    return result
+
+
+# ============================================================================
 # FMP DATA FETCHING
 # ============================================================================
 
