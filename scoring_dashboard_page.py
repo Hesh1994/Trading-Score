@@ -34,8 +34,11 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 Technical Analysis Stock Scoring System")
-st.caption("v2026-06-25l — removed scoring threshold UI")
+_title_col, _btn_col = st.columns([4, 1])
+with _title_col:
+    st.title("Technical Analysis Stock Scoring System")
+    st.caption("v2026-06-25m — run button in header")
+_run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 
 # ============================================================================
 # SIDEBAR: CONFIGURATION
@@ -428,7 +431,7 @@ symbols_list = list(dict.fromkeys(st.session_state['ta_ticker_list']))
 
 st.divider()
 
-if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True):
+if _run_btn_header:
 
     _use_fmp = bool(fmp_key and _fmp_module_ok)
     _source_label = "FMP API" if _use_fmp else "yfinance"
