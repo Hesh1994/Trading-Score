@@ -37,7 +37,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-25s — fix data_editor key conflict")
+    st.caption("v2026-06-25t — rename to Total Technical Score")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -407,14 +407,14 @@ if st.session_state['ta_ticker_list']:
         'Ticker': st.session_state['ta_ticker_list'],
     }
     if _scores:
-        _tbl_data['Total Score'] = [_scores.get(t, '') for t in st.session_state['ta_ticker_list']]
+        _tbl_data['Total Technical Score'] = [_scores.get(t, '') for t in st.session_state['ta_ticker_list']]
     _tbl = pd.DataFrame(_tbl_data)
     _col_cfg = {
         'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
         'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
     }
     if _scores:
-        _col_cfg['Total Score'] = st.column_config.NumberColumn('Total Score', disabled=True, format="%.2f")
+        _col_cfg['Total Technical Score'] = st.column_config.NumberColumn('Total Technical Score', disabled=True, format="%.2f")
     _edited = st.data_editor(
         _tbl,
         use_container_width=True,
