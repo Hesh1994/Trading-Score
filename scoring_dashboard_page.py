@@ -370,7 +370,8 @@ st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 # ── FMP price endpoint test ───────────────────────────────────────────────
 if fmp_key and _fmp_module_ok:
     with st.sidebar.expander("🔧 Test FMP Price Endpoint"):
-        _test_sym = st.text_input("Symbol", value=symbols_list[0] if symbols_list else "AAPL",
+        _ta_list  = st.session_state.get('ta_ticker_list', [])
+        _test_sym = st.text_input("Symbol", value=_ta_list[0] if _ta_list else "AAPL",
                                   key="ta_price_test_sym")
         if st.button("Test price fetch", key="ta_price_test_btn"):
             import requests as _rq
