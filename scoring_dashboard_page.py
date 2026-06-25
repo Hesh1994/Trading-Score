@@ -216,26 +216,10 @@ else:
         else:
             st.sidebar.caption("Click **Load Tickers** to browse listed stocks.")
 
-# ── Current ticker list & fallback custom entry ───────────────────────────
 if st.session_state['ta_ticker_list']:
-    st.sidebar.markdown(
-        "**Tickers to analyse:**  " +
-        " · ".join(f"`{t}`" for t in st.session_state['ta_ticker_list'])
+    st.sidebar.caption(
+        f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected — manage in main area"
     )
-    if st.sidebar.button("🗑️ Clear list", key="ta_clear_list"):
-        st.session_state['ta_ticker_list'] = []
-        st.rerun()
-
-st.sidebar.divider()
-st.sidebar.subheader("🎯 Or enter symbols manually")
-_default_custom = (", ".join(st.session_state['ta_ticker_list'])
-                   if st.session_state['ta_ticker_list'] else "AAPL,MSFT,GOOGL,AMZN,TSLA")
-custom_symbols = st.sidebar.text_area(
-    "Symbols (comma-separated)", value=_default_custom, height=68, key="ta_custom_symbols"
-)
-symbols_list = list(dict.fromkeys(
-    [s.strip().upper() for s in custom_symbols.replace("\n", ",").split(",") if s.strip()]
-))
 
 # Scoring Thresholds
 st.sidebar.subheader("🎯 Scoring Thresholds")
@@ -403,8 +387,58 @@ if fmp_key and _fmp_module_ok:
                 st.json({k: v for k, v in list(_j.items())[:3]})
 
 # ============================================================================
-# MAIN CONTENT
+# MAIN CONTENT — TICKER TABLE
 # ============================================================================
+
+st.subheader("📋 Tickers to Analyse")
+
+# ── Manual add ───────────────────────────────────────────────────────────────
+_add_col, _btn_col = st.columns([4, 1])
+with _add_col:
+    _manual_sym = st.text_input(
+        "Add ticker manually", placeholder="e.g. AAPL or 2222.SR",
+        key="ta_main_manual_add", label_visibility="collapsed"
+    )
+with _btn_col:
+    if st.button("➕ Add", key="ta_main_add_btn", use_container_width=True):
+        _s = _manual_sym.strip().upper()
+        if _s and _s not in st.session_state['ta_ticker_list']:
+            st.session_state['ta_ticker_list'].append(_s)
+            st.rerun()
+
+# ── Editable table with remove checkboxes ────────────────────────────────────
+if st.session_state['ta_ticker_list']:
+    _tbl = pd.DataFrame({
+        'Remove': [False] * len(st.session_state['ta_ticker_list']),
+        'Ticker': st.session_state['ta_ticker_list'],
+    })
+    _edited = st.data_editor(
+        _tbl,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
+            'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
+        },
+        key="ta_ticker_table",
+    )
+    _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
+    if _kept != st.session_state['ta_ticker_list']:
+        st.session_state['ta_ticker_list'] = _kept
+        st.rerun()
+
+    _c1, _c2 = st.columns([3, 1])
+    _c1.caption(f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected")
+    if _c2.button("🗑️ Clear all", key="ta_main_clear", use_container_width=True):
+        st.session_state['ta_ticker_list'] = []
+        st.rerun()
+else:
+    st.info("No tickers selected yet. Use the sidebar Ticker Finder or type a symbol above.")
+
+# symbols_list is always driven by the table
+symbols_list = list(dict.fromkeys(st.session_state['ta_ticker_list']))
+
+st.divider()
 
 if st.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True):
 
