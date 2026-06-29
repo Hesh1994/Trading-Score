@@ -36,16 +36,15 @@ INDICATORS_CONFIG = {
         'label': 'SMA (Simple Moving Average)',
         'interval': 'daily',
         'parameters': {
-            'period_short': 15,
-            'period_long': 45,
+            'period': 50,
         },
         'buy_criteria': {
-            'type': 'crossover',  # sma_short crosses above sma_long
-            'direction': 'above',
+            'type': 'price_vs_sma',
+            'operator': '>',
         },
         'sell_criteria': {
-            'type': 'crossover',
-            'direction': 'below',
+            'type': 'price_vs_sma',
+            'operator': '<',
         },
         'buy_score': 1.5,
         'sell_score': 1.5,

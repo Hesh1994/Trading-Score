@@ -372,20 +372,15 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
             if df is None or df.empty:
                 result['signals']['sma'] = {'error': 'no data for interval'}
             else:
-                sma_short, sma_long = calculate_sma(
-                    df,
-                    config['sma']['parameters']['period_short'],
-                    config['sma']['parameters']['period_long']
-                )
-                sma_short_current = sma_short.iloc[-1]
-                sma_long_current = sma_long.iloc[-1]
-                buy_trig, sell_trig = evaluate_sma_criteria(
-                    sma_short_current, sma_long_current,
-                    config['sma']['buy_criteria'], config['sma']['sell_criteria']
-                )
+                period = config['sma']['parameters'].get('period', config['sma']['parameters'].get('period_short', 15))
+                sma = df['close'].rolling(window=period).mean()
+                price_current = df['close'].iloc[-1]
+                sma_current = sma.iloc[-1]
+                buy_trig = bool(pd.notna(price_current) and pd.notna(sma_current) and price_current > sma_current)
+                sell_trig = bool(pd.notna(price_current) and pd.notna(sma_current) and price_current < sma_current)
                 result['signals']['sma'] = {
-                    'short': round(sma_short_current, 2) if pd.notna(sma_short_current) else None,
-                    'long': round(sma_long_current, 2) if pd.notna(sma_long_current) else None,
+                    'price': round(price_current, 2) if pd.notna(price_current) else None,
+                    'sma': round(sma_current, 2) if pd.notna(sma_current) else None,
                     'buy': buy_trig, 'sell': sell_trig,
                 }
                 if buy_trig: result['buy_score'] += config['sma']['buy_score']
