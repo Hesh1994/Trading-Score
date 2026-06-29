@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29i — EMA renamed SMA single line, price>/<SMA labels")
+    st.caption("v2026-06-29j — MFI scoring labels: Oversold/Overbought")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -345,6 +345,8 @@ if included_indicators:
                 _buy_label, _sell_label = "Short > Long Score", "Short < Long Score"
             elif selected_indicator == "ema":
                 _buy_label, _sell_label = "Price > SMA Score", "Price < SMA Score"
+            elif selected_indicator == "mfi":
+                _buy_label, _sell_label = "Oversold Score", "Overbought Score"
             else:
                 _buy_label, _sell_label = "Buy Score", "Sell Score"
             col1, col2 = st.columns(2)
