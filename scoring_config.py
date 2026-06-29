@@ -53,7 +53,7 @@ INDICATORS_CONFIG = {
     
     'ema': {
         'enabled': True,
-        'label': 'SMA',
+        'label': 'SMA (single line)',
         'interval': 'daily',
         'parameters': {
             'period': 15,
