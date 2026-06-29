@@ -454,9 +454,12 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
                 )
                 stoch_k_current = stoch_k.iloc[-1]
                 stoch_d_current = stoch_d.iloc[-1]
+                stoch_buy_crit = dict(config['stochastic']['buy_criteria'])
+                stoch_sell_crit = dict(config['stochastic']['sell_criteria'])
+                stoch_buy_crit['threshold'] = config['stochastic']['parameters'].get('buy_threshold', stoch_buy_crit.get('threshold', 20))
+                stoch_sell_crit['threshold'] = config['stochastic']['parameters'].get('sell_threshold', stoch_sell_crit.get('threshold', 80))
                 buy_trig, sell_trig = evaluate_stochastic_criteria(
-                    stoch_k_current, stoch_d_current,
-                    config['stochastic']['buy_criteria'], config['stochastic']['sell_criteria']
+                    stoch_k_current, stoch_d_current, stoch_buy_crit, stoch_sell_crit
                 )
                 result['signals']['stochastic'] = {
                     'k': round(stoch_k_current, 2) if pd.notna(stoch_k_current) else None,

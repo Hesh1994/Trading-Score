@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29k — MFI oversold/overbought thresholds")
+    st.caption("v2026-06-29l — Stochastic oversold/overbought thresholds")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -317,8 +317,8 @@ if included_indicators:
                     indicator_config[selected_indicator]['parameters'][param_key] = new_value
 
             # RSI / MFI oversold-overbought thresholds
-            if selected_indicator in ("rsi", "mfi"):
-                _defaults = {"rsi": (30.0, 70.0), "mfi": (20.0, 80.0)}
+            if selected_indicator in ("rsi", "mfi", "stochastic"):
+                _defaults = {"rsi": (30.0, 70.0), "mfi": (20.0, 80.0), "stochastic": (20.0, 80.0)}
                 _os_def, _ob_def = _defaults[selected_indicator]
                 st.write("Buy / Sell Rules:")
                 col1, col2 = st.columns(2)
@@ -347,7 +347,7 @@ if included_indicators:
                 _buy_label, _sell_label = "Short > Long Score", "Short < Long Score"
             elif selected_indicator == "ema":
                 _buy_label, _sell_label = "Price > SMA Score", "Price < SMA Score"
-            elif selected_indicator == "mfi":
+            elif selected_indicator in ("mfi", "stochastic"):
                 _buy_label, _sell_label = "Oversold Score", "Overbought Score"
             else:
                 _buy_label, _sell_label = "Buy Score", "Sell Score"
