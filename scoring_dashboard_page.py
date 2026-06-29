@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-25v — scores in separate stable dataframe")
+    st.caption("v2026-06-29a — scores always in same data_editor table")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -400,12 +400,17 @@ with _btn_col:
             st.session_state['ta_ticker_list'].append(_s)
             st.rerun()
 
-# ── Editable table with remove checkboxes ────────────────────────────────────
+# ── Editable table with remove checkboxes + score columns ────────────────────
 if st.session_state['ta_ticker_list']:
-    # Remove checkboxes — fixed structure so data_editor key never conflicts
+    _scores = st.session_state.get('ta_scores', {})
+    _canslim_scores = st.session_state.get('ta_canslim_scores', {})
+    _tickers = st.session_state['ta_ticker_list']
+    # Always include score columns so table structure never changes (avoids key conflict)
     _tbl = pd.DataFrame({
-        'Remove': [False] * len(st.session_state['ta_ticker_list']),
-        'Ticker': st.session_state['ta_ticker_list'],
+        'Remove': [False] * len(_tickers),
+        'Ticker': _tickers,
+        'Total Technical Score': [_scores.get(t) for t in _tickers],
+        'CANSLIM Score': [_canslim_scores.get(t) for t in _tickers],
     })
     _edited = st.data_editor(
         _tbl,
@@ -414,6 +419,8 @@ if st.session_state['ta_ticker_list']:
         column_config={
             'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
+            'Total Technical Score': st.column_config.NumberColumn('Total Technical Score', disabled=True, format='%.2f'),
+            'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.2f'),
         },
         key="ta_ticker_table",
     )
@@ -421,27 +428,6 @@ if st.session_state['ta_ticker_list']:
     if _kept != st.session_state['ta_ticker_list']:
         st.session_state['ta_ticker_list'] = _kept
         st.rerun()
-
-    # Score columns — shown as a separate read-only table once scores exist
-    _scores = st.session_state.get('ta_scores', {})
-    _canslim_scores = st.session_state.get('ta_canslim_scores', {})
-    if _scores or _canslim_scores:
-        _score_data = {'Ticker': st.session_state['ta_ticker_list']}
-        if _scores:
-            _score_data['Total Technical Score'] = [
-                _scores.get(t, None) for t in st.session_state['ta_ticker_list']
-            ]
-        if _canslim_scores:
-            _score_data['CANSLIM Score'] = [
-                _canslim_scores.get(t, None) for t in st.session_state['ta_ticker_list']
-            ]
-        _score_df = pd.DataFrame(_score_data)
-        _fmt = {}
-        if _scores:
-            _fmt['Total Technical Score'] = '{:.2f}'
-        if _canslim_scores:
-            _fmt['CANSLIM Score'] = '{:.2f}'
-        st.dataframe(_score_df.style.format(_fmt, na_rep='—'), use_container_width=True, hide_index=True)
 
     _c1, _c2 = st.columns([3, 1])
     _c1.caption(f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected")
