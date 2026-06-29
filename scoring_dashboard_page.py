@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29a — scores always in same data_editor table")
+    st.caption("v2026-06-29b — TA score normalised to 0-100%")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -419,7 +419,7 @@ if st.session_state['ta_ticker_list']:
         column_config={
             'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
-            'Total Technical Score': st.column_config.NumberColumn('Total Technical Score', disabled=True, format='%.2f'),
+            'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
             'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.2f'),
         },
         key="ta_ticker_table",
@@ -541,8 +541,16 @@ if _run_btn_header:
             
             # Convert to display DataFrame
             results_df = results_to_dataframe(results)
-            # Save per-ticker TA scores for the ticker table
-            st.session_state['ta_scores'] = {r['ticker']: round(r['net_score'], 2) for r in results}
+            # Normalise net_score to 0-100% based on max possible buy score
+            _max_buy = sum(
+                cfg.get('buy_score', 1)
+                for cfg in indicator_config.values()
+                if cfg.get('enabled')
+            ) or 1
+            st.session_state['ta_scores'] = {
+                r['ticker']: round(max(0.0, min(100.0, (r['net_score'] / _max_buy) * 100)), 1)
+                for r in results
+            }
 
         except Exception as e:
             st.error(f"Error during scoring: {str(e)}")
