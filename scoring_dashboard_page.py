@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29l — Stochastic oversold/overbought thresholds")
+    st.caption("v2026-06-29m — fix duplicate key: skip threshold params in loop")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -295,7 +295,7 @@ if included_indicators:
             st.write("Parameters:")
             params = ind_cfg['parameters'].copy()
             for param_key, param_value in params.items():
-                if selected_indicator == "rsi" and param_key in ("buy_threshold", "sell_threshold"):
+                if selected_indicator in ("rsi", "mfi", "stochastic") and param_key in ("buy_threshold", "sell_threshold"):
                     continue
                 if isinstance(param_value, int):
                     new_value = st.number_input(
