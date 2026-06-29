@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29n — Aroon score labels Up>Down / Up<Down")
+    st.caption("v2026-06-29o — Bollinger score labels price<lower/price>upper")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -351,6 +351,8 @@ if included_indicators:
                 _buy_label, _sell_label = "Oversold Score", "Overbought Score"
             elif selected_indicator == "aroon":
                 _buy_label, _sell_label = "Up > Down Score", "Up < Down Score"
+            elif selected_indicator == "bollinger":
+                _buy_label, _sell_label = "Price < Lower Band Score", "Price > Upper Band Score"
             else:
                 _buy_label, _sell_label = "Buy Score", "Sell Score"
             col1, col2 = st.columns(2)
