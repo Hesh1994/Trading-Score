@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29d — TA score = buy_signal_count/n_indicators*100")
+    st.caption("v2026-06-29e — RSI scores renamed oversold/overbought")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -339,10 +339,12 @@ if included_indicators:
 
             # Buy/sell scores
             st.write("Scoring:")
+            _buy_label  = "Oversold Score"  if selected_indicator == "rsi" else "Buy Score"
+            _sell_label = "Overbought Score" if selected_indicator == "rsi" else "Sell Score"
             col1, col2 = st.columns(2)
             with col1:
                 buy_score = st.number_input(
-                    "Buy Score",
+                    _buy_label,
                     value=float(ind_cfg['buy_score']),
                     step=0.5,
                     key=f"{selected_indicator}_buy_score"
@@ -350,7 +352,7 @@ if included_indicators:
                 indicator_config[selected_indicator]['buy_score'] = buy_score
             with col2:
                 sell_score = st.number_input(
-                    "Sell Score",
+                    _sell_label,
                     value=float(ind_cfg['sell_score']),
                     step=0.5,
                     key=f"{selected_indicator}_sell_score"
