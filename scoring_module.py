@@ -425,10 +425,11 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
             else:
                 mfi = calculate_mfi(df, config['mfi']['parameters']['period'])
                 mfi_current = mfi.iloc[-1]
-                buy_trig, sell_trig = evaluate_mfi_criteria(
-                    mfi_current,
-                    config['mfi']['buy_criteria'], config['mfi']['sell_criteria']
-                )
+                mfi_buy_crit = dict(config['mfi']['buy_criteria'])
+                mfi_sell_crit = dict(config['mfi']['sell_criteria'])
+                mfi_buy_crit['threshold'] = config['mfi']['parameters'].get('buy_threshold', mfi_buy_crit.get('threshold', 20))
+                mfi_sell_crit['threshold'] = config['mfi']['parameters'].get('sell_threshold', mfi_sell_crit.get('threshold', 80))
+                buy_trig, sell_trig = evaluate_mfi_criteria(mfi_current, mfi_buy_crit, mfi_sell_crit)
                 result['signals']['mfi'] = {
                     'value': round(mfi_current, 2) if pd.notna(mfi_current) else None,
                     'buy': buy_trig, 'sell': sell_trig,

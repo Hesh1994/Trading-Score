@@ -38,7 +38,7 @@ st.set_page_config(
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
     st.title("Technical Analysis Stock Scoring System")
-    st.caption("v2026-06-29j — MFI scoring labels: Oversold/Overbought")
+    st.caption("v2026-06-29k — MFI oversold/overbought thresholds")
 _btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
 _run_btn_header = _btn_col.button("🚀 Run Scoring Analysis", type="primary", use_container_width=True, key="run_btn_header")
 st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
@@ -316,26 +316,28 @@ if included_indicators:
                     )
                     indicator_config[selected_indicator]['parameters'][param_key] = new_value
 
-            # RSI buy/sell thresholds
-            if selected_indicator == "rsi":
+            # RSI / MFI oversold-overbought thresholds
+            if selected_indicator in ("rsi", "mfi"):
+                _defaults = {"rsi": (30.0, 70.0), "mfi": (20.0, 80.0)}
+                _os_def, _ob_def = _defaults[selected_indicator]
                 st.write("Buy / Sell Rules:")
                 col1, col2 = st.columns(2)
                 with col1:
                     buy_thresh = st.number_input(
                         "Oversold (<)",
                         min_value=1.0, max_value=99.0,
-                        value=float(ind_cfg["parameters"].get("buy_threshold", 30.0)),
-                        step=1.0, key="rsi_buy_threshold",
+                        value=float(ind_cfg["parameters"].get("buy_threshold", _os_def)),
+                        step=1.0, key=f"{selected_indicator}_buy_threshold",
                     )
-                    indicator_config["rsi"]["parameters"]["buy_threshold"] = buy_thresh
+                    indicator_config[selected_indicator]["parameters"]["buy_threshold"] = buy_thresh
                 with col2:
                     sell_thresh = st.number_input(
                         "Overbought (>)",
                         min_value=1.0, max_value=99.0,
-                        value=float(ind_cfg["parameters"].get("sell_threshold", 70.0)),
-                        step=1.0, key="rsi_sell_threshold",
+                        value=float(ind_cfg["parameters"].get("sell_threshold", _ob_def)),
+                        step=1.0, key=f"{selected_indicator}_sell_threshold",
                     )
-                    indicator_config["rsi"]["parameters"]["sell_threshold"] = sell_thresh
+                    indicator_config[selected_indicator]["parameters"]["sell_threshold"] = sell_thresh
 
             # Buy/sell scores
             st.write("Scoring:")
