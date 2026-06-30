@@ -467,33 +467,36 @@ if st.session_state['ta_ticker_list']:
     # ── Column counts ─────────────────────────────────────────────────────────
     # Layout: Remove(fixed 40px) | Ticker | [TTS days or TTS standalone] |
     #         [F&G days or F&G standalone] | CANSLIM
-    _n_tts = 5 if (_show_5d and _scores_history) else 0
-    _n_fg  = 5 if (_show_5d_fg and _fg_history)  else 0
-    _n_flex = 1 + (_n_tts or 1) + (_n_fg or 1) + 1   # Ticker + TTS + F&G + CANSLIM
-    R = 40  # Remove column fixed width in px
+    _n_tts  = 5 if (_show_5d    and _scores_history) else 0
+    _n_fg   = 5 if (_show_5d_fg and _fg_history)    else 0
+    # flex units per section: Ticker(1) | TTS(5 or 1) | F&G(5 or 1) | CANSLIM(1)
+    _f_tts  = _n_tts or 1
+    _f_fg   = _n_fg  or 1
 
-    # Helper: build inline-style merged group header
-    def _grp_hdr(label, col_start, col_span, n_flex):
-        off_px  =  R * (n_flex - col_start) / n_flex
-        off_pct =  col_start / n_flex * 100
-        w_px    = -R * col_span / n_flex
-        w_pct   =  col_span / n_flex * 100
-        return (
-            f'<div style="display:flex;align-items:flex-end;height:26px;'
-            f'margin-bottom:-2px;padding-left:calc({off_px:.2f}px + {off_pct:.4f}%);'
-            f'box-sizing:border-box;">'
-            f'<div style="width:calc({w_px:.2f}px + {w_pct:.4f}%);text-align:center;'
-            f'font-size:0.72rem;font-weight:700;color:rgb(28,131,225);'
-            f'background:rgba(28,131,225,0.08);border:1px solid rgba(28,131,225,0.30);'
-            f'border-bottom:none;border-radius:6px 6px 0 0;padding:3px 0;'
-            f'box-sizing:border-box;">{label}</div></div>'
+    # ── Single HTML row with group headers, using flex to mirror AG Grid exactly ──
+    # Remove col is ~40px fixed; all other cols share remaining width equally via flex.
+    if _n_tts or _n_fg:
+        _GRP = (
+            'text-align:center;font-size:0.72rem;font-weight:700;'
+            'color:rgb(28,131,225);background:rgba(28,131,225,0.08);'
+            'border:1px solid rgba(28,131,225,0.30);border-bottom:none;'
+            'border-radius:6px 6px 0 0;padding:3px 2px;box-sizing:border-box;'
         )
-
-    # Render merged headers (must appear immediately before the data_editor)
-    if _n_tts:
-        st.markdown(_grp_hdr("Total Technical Score", 1, 5, _n_flex), unsafe_allow_html=True)
-    if _n_fg:
-        st.markdown(_grp_hdr("Fear & Greed", 1 + _n_tts, 5, _n_flex), unsafe_allow_html=True)
+        _SPC = 'box-sizing:border-box;'
+        tts_cell = f'<div style="flex:{_f_tts};{_GRP}">Total Technical Score</div>' if _n_tts else f'<div style="flex:1;{_SPC}"></div>'
+        fg_cell  = f'<div style="flex:{_f_fg};{_GRP}">Fear &amp; Greed</div>'       if _n_fg  else f'<div style="flex:1;{_SPC}"></div>'
+        st.markdown(
+            f'<div style="display:flex;align-items:flex-end;height:26px;margin-bottom:-10px;">'
+            f'  <div style="min-width:40px;width:40px;flex-shrink:0;"></div>'
+            f'  <div style="flex:1;display:flex;min-width:0;">'
+            f'    <div style="flex:1;{_SPC}"></div>'   # Ticker spacer
+            f'    {tts_cell}'
+            f'    {fg_cell}'
+            f'    <div style="flex:1;{_SPC}"></div>'   # CANSLIM spacer
+            f'  </div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     # ── Build DataFrame ───────────────────────────────────────────────────────
     _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
