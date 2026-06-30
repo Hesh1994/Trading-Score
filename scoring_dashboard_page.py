@@ -519,15 +519,17 @@ if st.session_state['ta_ticker_list']:
             st.session_state['ta_ticker_list'] = []
             st.rerun()
 
-        # Remove tickers via sidebar multiselect (shown only in 5D mode)
-        _to_rm = st.sidebar.multiselect(
-            "Remove Tickers", _tickers,
-            key="rm_5d_sel",
-            placeholder="Select tickers to remove…"
-        )
+        # Remove tickers via sidebar checkboxes (shown only in 5D mode)
+        st.sidebar.markdown("**Remove Tickers**")
+        _to_rm = [
+            t for t in _tickers
+            if st.sidebar.checkbox(t, key=f"rm_chk_{t}", value=False)
+        ]
         if _to_rm:
             if st.sidebar.button("Remove selected", key="rm_5d_apply"):
                 st.session_state['ta_ticker_list'] = [t for t in _tickers if t not in _to_rm]
+                for t in _to_rm:
+                    st.session_state.pop(f"rm_chk_{t}", None)
                 st.rerun()
 
     else:
