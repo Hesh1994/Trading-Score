@@ -422,6 +422,7 @@ with _btn_col:
 if st.session_state['ta_ticker_list']:
     _scores = st.session_state.get('ta_scores', {})
     _canslim_scores = st.session_state.get('ta_canslim_scores', {})
+    _fg_scores = st.session_state.get('ta_fg_scores', {})
     _tickers = st.session_state['ta_ticker_list']
     # Always include score columns so table structure never changes (avoids key conflict)
     _tbl = pd.DataFrame({
@@ -429,6 +430,7 @@ if st.session_state['ta_ticker_list']:
         'Ticker': _tickers,
         'Total Technical Score': [_scores.get(t) for t in _tickers],
         'CANSLIM Score': [_canslim_scores.get(t) for t in _tickers],
+        'Fear & Greed': [_fg_scores.get(t) for t in _tickers],
     })
     _edited = st.data_editor(
         _tbl,
@@ -439,6 +441,7 @@ if st.session_state['ta_ticker_list']:
             'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
             'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
             'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.2f'),
+            'Fear & Greed': st.column_config.NumberColumn('Fear & Greed (0–100)', disabled=True, format='%.1f'),
         },
         key="ta_ticker_table",
     )
@@ -568,6 +571,11 @@ if _run_btn_header:
                     / _n_indicators * 100, 1
                 )
                 for r in results
+            }
+            st.session_state['ta_fg_scores'] = {
+                r['ticker']: round(r['signals']['fear_greed']['value'], 1)
+                for r in results
+                if 'fear_greed' in r['signals'] and 'value' in r['signals']['fear_greed']
             }
 
         except Exception as e:
