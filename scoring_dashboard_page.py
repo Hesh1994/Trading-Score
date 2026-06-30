@@ -424,62 +424,82 @@ if st.session_state['ta_ticker_list']:
     _canslim_scores = st.session_state.get('ta_canslim_scores', {})
     _fg_scores = st.session_state.get('ta_fg_scores', {})
     _scores_history = st.session_state.get('ta_scores_history', {})
-    _fg_history = st.session_state.get('ta_fg_history', {})
     _tickers = st.session_state['ta_ticker_list']
-
-    # Toggle button for 5D evolution panel
-    _hdr_col, _btn_col = st.columns([6, 1])
     _show_5d = st.session_state.get('show_5d_tech', False)
-    if _btn_col.button(
-        "📅 5D ▲" if _show_5d else "📅 5D ▼",
-        key="toggle_5d_btn",
-        use_container_width=True,
-        help="Show / hide the 5-day Technical Score evolution",
-    ):
-        st.session_state['show_5d_tech'] = not _show_5d
-        st.rerun()
 
-    # Always include score columns so table structure never changes (avoids key conflict)
-    _tbl = pd.DataFrame({
-        'Remove': [False] * len(_tickers),
-        'Ticker': _tickers,
-        'Total Technical Score': [_scores.get(t) for t in _tickers],
-        'CANSLIM Score': [_canslim_scores.get(t) for t in _tickers],
-        'Fear & Greed': [_fg_scores.get(t) for t in _tickers],
-    })
+    # Format stored ISO dates as "28 Jun"
+    _raw_dates = st.session_state.get('ta_history_dates', [])
+    _day_labels = []
+    for _rd in _raw_dates:
+        try:
+            _dt = dt.datetime.strptime(_rd, '%Y-%m-%d')
+            _day_labels.append(_dt.strftime('%-d %b'))
+        except Exception:
+            try:
+                _dt = dt.datetime.strptime(_rd, '%Y-%m-%d %H:%M:%S')
+                _day_labels.append(_dt.strftime('%-d %b'))
+            except Exception:
+                _day_labels.append(_rd)
+    if not _day_labels:
+        _day_labels = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
+
+    # ── Header row: 📅 5D toggle aligned over the "Total Technical Score" header ──
+    # Table cols (no 5D): Remove≈4% Ticker≈18% TTS≈22% CANSLIM≈22% F&G≈22% ≈12% right padding
+    # When 5D is on, 5 extra cols (~10% each = 50%) push TTS further right.
+    # We approximate with st.columns so the toggle sits above TTS.
+    st.markdown(
+        "<style>.five-d-row { margin-bottom: -18px; } "
+        ".five-d-row button { font-size: 0.7rem !important; padding: 2px 6px !important; "
+        "height: 24px !important; min-height: 0 !important; }</style>",
+        unsafe_allow_html=True,
+    )
+    _pre_pct  = 22 + (50 if _show_5d else 0)   # space before TTS column
+    _btn_pct  = 22                               # width of TTS column
+    _post_pct = max(1, 78 - _pre_pct)
+    st.markdown('<div class="five-d-row">', unsafe_allow_html=True)
+    _, _toggle_slot, _ = st.columns([_pre_pct, _btn_pct, _post_pct])
+    with _toggle_slot:
+        if st.button(
+            "📅 5D ▲" if _show_5d else "📅 5D ▼",
+            key="toggle_5d_btn",
+            use_container_width=True,
+            help="Show / hide 5-day Technical Score evolution",
+        ):
+            st.session_state['show_5d_tech'] = not _show_5d
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Build DataFrame — 5D day-columns appear immediately left of Total Technical Score ──
+    _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
+    _col_cfg = {
+        'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
+        'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
+    }
+    if _show_5d and _scores_history:
+        for _i, _lbl in enumerate(_day_labels):
+            _tbl_data[_lbl] = [(_scores_history.get(t) or [None] * 5)[_i] for t in _tickers]
+            _col_cfg[_lbl] = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
+
+    _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
+    _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
+    _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
+    _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
+    _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
+    _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
+
+    _tbl    = pd.DataFrame(_tbl_data)
+    _tbl_key = 'ta_ticker_table_5d' if _show_5d else 'ta_ticker_table'
     _edited = st.data_editor(
         _tbl,
         use_container_width=True,
         hide_index=True,
-        column_config={
-            'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
-            'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
-            'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
-            'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%'),
-            'Fear & Greed': st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%'),
-        },
-        key="ta_ticker_table",
+        column_config=_col_cfg,
+        key=_tbl_key,
     )
     _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
     if _kept != st.session_state['ta_ticker_list']:
         st.session_state['ta_ticker_list'] = _kept
         st.rerun()
-
-    # 5D evolution panel — one column per trading day
-    if st.session_state.get('show_5d_tech') and _scores_history:
-        _dates = st.session_state.get('ta_history_dates', ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today'])
-        _5d_rows = {'Ticker': _tickers}
-        for _i, _d in enumerate(_dates):
-            _5d_rows[_d] = [
-                (_scores_history.get(t) or [None] * 5)[_i]
-                for t in _tickers
-            ]
-        _5d_df = pd.DataFrame(_5d_rows)
-        _5d_col_cfg = {'Ticker': st.column_config.TextColumn('Ticker', disabled=True)}
-        for _d in _dates:
-            _5d_col_cfg[_d] = st.column_config.NumberColumn(_d, disabled=True, format='%.1f%%')
-        st.caption("Technical Score — 5-day evolution")
-        st.dataframe(_5d_df, use_container_width=True, hide_index=True, column_config=_5d_col_cfg)
 
     _c1, _c2 = st.columns([3, 1])
     _c1.caption(f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected")
