@@ -426,15 +426,26 @@ if st.session_state['ta_ticker_list']:
     _scores_history = st.session_state.get('ta_scores_history', {})
     _fg_history = st.session_state.get('ta_fg_history', {})
     _tickers = st.session_state['ta_ticker_list']
+
+    # Toggle button for 5D evolution panel
+    _hdr_col, _btn_col = st.columns([6, 1])
+    _show_5d = st.session_state.get('show_5d_tech', False)
+    if _btn_col.button(
+        "📅 5D ▲" if _show_5d else "📅 5D ▼",
+        key="toggle_5d_btn",
+        use_container_width=True,
+        help="Show / hide the 5-day Technical Score evolution",
+    ):
+        st.session_state['show_5d_tech'] = not _show_5d
+        st.rerun()
+
     # Always include score columns so table structure never changes (avoids key conflict)
     _tbl = pd.DataFrame({
         'Remove': [False] * len(_tickers),
         'Ticker': _tickers,
         'Total Technical Score': [_scores.get(t) for t in _tickers],
-        'Tech Score (5d)': [_scores_history.get(t) for t in _tickers],
         'CANSLIM Score': [_canslim_scores.get(t) for t in _tickers],
         'Fear & Greed': [_fg_scores.get(t) for t in _tickers],
-        'F&G (5d)': [_fg_history.get(t) for t in _tickers],
     })
     _edited = st.data_editor(
         _tbl,
@@ -444,10 +455,8 @@ if st.session_state['ta_ticker_list']:
             'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
             'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
-            'Tech Score (5d)': st.column_config.LineChartColumn('Tech Score 5d', y_min=0, y_max=100),
             'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%'),
             'Fear & Greed': st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%'),
-            'F&G (5d)': st.column_config.LineChartColumn('Fear & Greed 5d', y_min=0, y_max=100),
         },
         key="ta_ticker_table",
     )
@@ -455,6 +464,22 @@ if st.session_state['ta_ticker_list']:
     if _kept != st.session_state['ta_ticker_list']:
         st.session_state['ta_ticker_list'] = _kept
         st.rerun()
+
+    # 5D evolution panel — one column per trading day
+    if st.session_state.get('show_5d_tech') and _scores_history:
+        _dates = st.session_state.get('ta_history_dates', ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today'])
+        _5d_rows = {'Ticker': _tickers}
+        for _i, _d in enumerate(_dates):
+            _5d_rows[_d] = [
+                (_scores_history.get(t) or [None] * 5)[_i]
+                for t in _tickers
+            ]
+        _5d_df = pd.DataFrame(_5d_rows)
+        _5d_col_cfg = {'Ticker': st.column_config.TextColumn('Ticker', disabled=True)}
+        for _d in _dates:
+            _5d_col_cfg[_d] = st.column_config.NumberColumn(_d, disabled=True, format='%.1f%%')
+        st.caption("Technical Score — 5-day evolution")
+        st.dataframe(_5d_df, use_container_width=True, hide_index=True, column_config=_5d_col_cfg)
 
     _c1, _c2 = st.columns([3, 1])
     _c1.caption(f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected")
@@ -614,6 +639,18 @@ if _run_btn_header:
                     _fg_history[ticker] = _fg_days
             st.session_state['ta_scores_history'] = _tech_history
             st.session_state['ta_fg_history'] = _fg_history
+            # Store the actual trading dates for the last 5 bars
+            _hist_dates = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
+            for _iv_data in tickers_data_by_interval.values():
+                for _df in _iv_data.values():
+                    if len(_df) >= 5:
+                        _hist_dates = [
+                            str(d.date()) if hasattr(d, 'date') else str(d)
+                            for d in _df.index[-5:]
+                        ]
+                        break
+                break
+            st.session_state['ta_history_dates'] = _hist_dates
 
         except Exception as e:
             st.error(f"Error during scoring: {str(e)}")
