@@ -464,91 +464,100 @@ if st.session_state['ta_ticker_list']:
             st.session_state['show_5d_fg'] = not _show_5d_fg
             st.rerun()
 
-    # ── Column counts ─────────────────────────────────────────────────────────
-    # Layout: Remove(fixed 40px) | Ticker | [TTS days or TTS standalone] |
-    #         [F&G days or F&G standalone] | CANSLIM
-    _n_tts  = 5 if (_show_5d    and _scores_history) else 0
-    _n_fg   = 5 if (_show_5d_fg and _fg_history)    else 0
-    # flex units per section: Ticker(1) | TTS(5 or 1) | F&G(5 or 1) | CANSLIM(1)
-    _f_tts  = _n_tts or 1
-    _f_fg   = _n_fg  or 1
+    _n_tts = 5 if (_show_5d    and _scores_history) else 0
+    _n_fg  = 5 if (_show_5d_fg and _fg_history)    else 0
 
-    # ── Single HTML row with group headers, using flex to mirror AG Grid exactly ──
-    # Remove col is ~40px fixed; all other cols share remaining width equally via flex.
     if _n_tts or _n_fg:
-        _CELL = (
-            'display:flex;align-items:center;justify-content:center;'
-            'font-size:0.80rem;font-weight:700;letter-spacing:0.03em;'
-            'color:#1a1a2e;background:rgba(28,131,225,0.18);'
-            'border:2px solid rgba(28,131,225,0.70);'
-            'box-sizing:border-box;'
-        )
-        _SPC = 'box-sizing:border-box;'
-        tts_cell = (
-            f'<div style="flex:5;{_CELL}">Total Technical Score</div>'
-            if _n_tts else f'<div style="flex:1;{_SPC}"></div>'
-        )
-        fg_cell = (
-            f'<div style="flex:5;{_CELL}">Fear &amp; Greed</div>'
-            if _n_fg else f'<div style="flex:1;{_SPC}"></div>'
-        )
-        st.markdown(
-            f'<div style="display:flex;align-items:stretch;height:36px;margin-bottom:-10px;">'
-            f'  <div style="min-width:40px;width:40px;flex-shrink:0;"></div>'
-            f'  <div style="flex:1;display:flex;min-width:0;">'
-            f'    <div style="flex:1;{_SPC}"></div>'
-            f'    {tts_cell}'
-            f'    {fg_cell}'
-            f'    <div style="flex:1;{_SPC}"></div>'
-            f'  </div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        # ── 5D active: MultiIndex DataFrame → native merged-header rendering ──────
+        # Build column tuples: (group, sub-header)
+        _mi_tuples = [('', 'Ticker')]
+        _mi_data   = {'Ticker': _tickers}
 
-    # ── Build DataFrame ───────────────────────────────────────────────────────
-    _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
-    _col_cfg  = {
-        'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
-        'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
-    }
-    # TTS: 5 day cols OR standalone
-    if _n_tts:
-        for _i, _lbl in enumerate(_day_labels):
-            _k = f'TTS_{_lbl}'
-            _tbl_data[_k] = [(_scores_history.get(t) or [None]*5)[_i] for t in _tickers]
-            _col_cfg[_k]  = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
+        if _n_tts:
+            for _i, _lbl in enumerate(_day_labels):
+                _mi_tuples.append(('Total Technical Score', _lbl))
+                _mi_data[('Total Technical Score', _lbl)] = [
+                    f"{((_scores_history.get(t) or [None]*5)[_i] or 0):.1f}%"
+                    if (_scores_history.get(t) or [None]*5)[_i] is not None else ''
+                    for t in _tickers
+                ]
+        else:
+            _mi_tuples.append(('', 'Tech Score'))
+            _mi_data[('', 'Tech Score')] = [
+                f"{_scores.get(t, 0):.1f}%" if _scores.get(t) is not None else ''
+                for t in _tickers
+            ]
+
+        if _n_fg:
+            for _i, _lbl in enumerate(_day_labels):
+                _mi_tuples.append(('Fear & Greed', _lbl))
+                _mi_data[('Fear & Greed', _lbl)] = [
+                    f"{((_fg_history.get(t) or [None]*5)[_i] or 0):.1f}%"
+                    if (_fg_history.get(t) or [None]*5)[_i] is not None else ''
+                    for t in _tickers
+                ]
+        else:
+            _mi_tuples.append(('', 'Fear & Greed'))
+            _mi_data[('', 'Fear & Greed')] = [
+                f"{_fg_scores.get(t, 0):.1f}%" if _fg_scores.get(t) is not None else ''
+                for t in _tickers
+            ]
+
+        _mi_tuples.append(('', 'CANSLIM'))
+        _mi_data[('', 'CANSLIM')] = [
+            f"{_canslim_scores.get(t, 0):.1f}%" if _canslim_scores.get(t) is not None else ''
+            for t in _tickers
+        ]
+
+        _mi_df = pd.DataFrame(_mi_data)
+        _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
+        st.dataframe(_mi_df, use_container_width=True, hide_index=True)
+
+        # Remove tickers via multiselect (data_editor not used here)
+        _to_rm = st.multiselect(
+            "Select tickers to remove:", _tickers,
+            key="rm_5d_sel", label_visibility="collapsed",
+            placeholder="Select tickers to remove…"
+        )
+        _rc1, _rc2, _rc3 = st.columns([3, 1, 1])
+        _rc1.caption(f"{len(_tickers)} ticker(s) — use the selector above to remove")
+        if _rc2.button("Remove selected", key="rm_5d_apply", disabled=not _to_rm):
+            st.session_state['ta_ticker_list'] = [t for t in _tickers if t not in _to_rm]
+            st.rerun()
+        if _rc3.button("🗑️ Clear all", key="ta_main_clear_5d"):
+            st.session_state['ta_ticker_list'] = []
+            st.rerun()
+
     else:
-        _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
-        _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
-    # F&G: 5 day cols OR standalone
-    if _n_fg:
-        for _i, _lbl in enumerate(_day_labels):
-            _k = f'FG_{_lbl}'
-            _tbl_data[_k] = [(_fg_history.get(t) or [None]*5)[_i] for t in _tickers]
-            _col_cfg[_k]  = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
-    else:
-        _tbl_data['Fear & Greed'] = [_fg_scores.get(t) for t in _tickers]
-        _col_cfg['Fear & Greed']  = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
-    # CANSLIM always last
-    _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _tickers]
-    _col_cfg['CANSLIM Score']  = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
+        # ── Normal view: data_editor with Remove checkboxes ───────────────────────
+        _tbl_data = {
+            'Remove':                [False] * len(_tickers),
+            'Ticker':                _tickers,
+            'Total Technical Score': [_scores.get(t) for t in _tickers],
+            'Fear & Greed':          [_fg_scores.get(t) for t in _tickers],
+            'CANSLIM Score':         [_canslim_scores.get(t) for t in _tickers],
+        }
+        _col_cfg = {
+            'Remove':                st.column_config.CheckboxColumn('✖ Remove', default=False),
+            'Ticker':                st.column_config.TextColumn('Ticker', disabled=True),
+            'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
+            'Fear & Greed':          st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%'),
+            'CANSLIM Score':         st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%'),
+        }
+        _edited = st.data_editor(
+            pd.DataFrame(_tbl_data), use_container_width=True,
+            hide_index=True, column_config=_col_cfg, key='ta_ticker_table',
+        )
+        _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
+        if _kept != st.session_state['ta_ticker_list']:
+            st.session_state['ta_ticker_list'] = _kept
+            st.rerun()
 
-    _tbl     = pd.DataFrame(_tbl_data)
-    _tbl_key = f'ta_ticker_table_{int(_show_5d)}_{int(_show_5d_fg)}'
-    _edited  = st.data_editor(
-        _tbl, use_container_width=True, hide_index=True,
-        column_config=_col_cfg, key=_tbl_key,
-    )
-    _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
-    if _kept != st.session_state['ta_ticker_list']:
-        st.session_state['ta_ticker_list'] = _kept
-        st.rerun()
-
-    _c1, _c2 = st.columns([3, 1])
-    _c1.caption(f"{len(st.session_state['ta_ticker_list'])} ticker(s) selected")
-    if _c2.button("🗑️ Clear all", key="ta_main_clear", use_container_width=True):
-        st.session_state['ta_ticker_list'] = []
-        st.rerun()
+        _c1, _c2 = st.columns([3, 1])
+        _c1.caption(f"{len(_tickers)} ticker(s) selected")
+        if _c2.button("🗑️ Clear all", key="ta_main_clear"):
+            st.session_state['ta_ticker_list'] = []
+            st.rerun()
 else:
     st.info("No tickers selected yet. Use the sidebar Ticker Finder or type a symbol above.")
 
