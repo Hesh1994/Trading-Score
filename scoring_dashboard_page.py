@@ -513,20 +513,22 @@ if st.session_state['ta_ticker_list']:
         _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
         st.dataframe(_mi_df, use_container_width=True, hide_index=True)
 
-        # Remove tickers via multiselect (data_editor not used here)
-        _to_rm = st.multiselect(
-            "Select tickers to remove:", _tickers,
-            key="rm_5d_sel", label_visibility="collapsed",
-            placeholder="Select tickers to remove…"
-        )
-        _rc1, _rc2, _rc3 = st.columns([3, 1, 1])
-        _rc1.caption(f"{len(_tickers)} ticker(s) — use the selector above to remove")
-        if _rc2.button("Remove selected", key="rm_5d_apply", disabled=not _to_rm):
-            st.session_state['ta_ticker_list'] = [t for t in _tickers if t not in _to_rm]
-            st.rerun()
-        if _rc3.button("🗑️ Clear all", key="ta_main_clear_5d"):
+        _rc1, _rc2 = st.columns([3, 1])
+        _rc1.caption(f"{len(_tickers)} ticker(s) selected")
+        if _rc2.button("🗑️ Clear all", key="ta_main_clear_5d"):
             st.session_state['ta_ticker_list'] = []
             st.rerun()
+
+        # Remove tickers via sidebar multiselect (shown only in 5D mode)
+        _to_rm = st.sidebar.multiselect(
+            "Remove Tickers", _tickers,
+            key="rm_5d_sel",
+            placeholder="Select tickers to remove…"
+        )
+        if _to_rm:
+            if st.sidebar.button("Remove selected", key="rm_5d_apply"):
+                st.session_state['ta_ticker_list'] = [t for t in _tickers if t not in _to_rm]
+                st.rerun()
 
     else:
         # ── Normal view: data_editor with Remove checkboxes ───────────────────────
