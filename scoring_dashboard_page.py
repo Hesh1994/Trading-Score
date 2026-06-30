@@ -443,22 +443,34 @@ if st.session_state['ta_ticker_list']:
     if not _day_labels:
         _day_labels = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
 
-    # ── Header row: 📅 5D toggle aligned over the "Total Technical Score" header ──
-    # Table cols (no 5D): Remove≈4% Ticker≈18% TTS≈22% CANSLIM≈22% F&G≈22% ≈12% right padding
-    # When 5D is on, 5 extra cols (~10% each = 50%) push TTS further right.
-    # We approximate with st.columns so the toggle sits above TTS.
-    st.markdown(
-        "<style>.five-d-row { margin-bottom: -18px; } "
-        ".five-d-row button { font-size: 0.7rem !important; padding: 2px 6px !important; "
-        "height: 24px !important; min-height: 0 !important; }</style>",
-        unsafe_allow_html=True,
-    )
-    _pre_pct  = 22 + (50 if _show_5d else 0)   # space before TTS column
-    _btn_pct  = 22                               # width of TTS column
-    _post_pct = max(1, 78 - _pre_pct)
-    st.markdown('<div class="five-d-row">', unsafe_allow_html=True)
+    # ── Inject CSS: shrink the button and pull it up into the data_editor header row ──
+    # margin-bottom on the button wrapper overlaps it with the table header (~38px tall).
+    # The st.columns ratio positions it over the "Total Technical Score" header cell.
+    # Without 5D: Remove(~5%) + Ticker(~18%) = 23% offset; TTS spans ~26%.
+    # With 5D on: 5 extra cols push TTS right by ~5*9% = 45% more → 68% offset.
+    st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"]:has(> div > div[data-testid="stVerticalBlock"] .five-d-btn) {
+        margin-bottom: -52px;
+        position: relative;
+        z-index: 10;
+    }
+    .five-d-btn button {
+        height: 26px !important;
+        min-height: 0 !important;
+        padding: 0 8px !important;
+        font-size: 0.68rem !important;
+        line-height: 1 !important;
+        border-radius: 4px !important;
+    }
+    </style>""", unsafe_allow_html=True)
+
+    _pre_pct  = 68 if _show_5d else 23
+    _btn_pct  = 26
+    _post_pct = max(1, 100 - _pre_pct - _btn_pct)
     _, _toggle_slot, _ = st.columns([_pre_pct, _btn_pct, _post_pct])
     with _toggle_slot:
+        st.markdown('<span class="five-d-btn">', unsafe_allow_html=True)
         if st.button(
             "📅 5D ▲" if _show_5d else "📅 5D ▼",
             key="toggle_5d_btn",
@@ -467,7 +479,7 @@ if st.session_state['ta_ticker_list']:
         ):
             st.session_state['show_5d_tech'] = not _show_5d
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</span>', unsafe_allow_html=True)
 
     # ── Build DataFrame — 5D day-columns appear immediately left of Total Technical Score ──
     _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
@@ -483,7 +495,7 @@ if st.session_state['ta_ticker_list']:
     _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
     _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
     _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
-    _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
+    _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%) 📅', disabled=True, format='%.1f%%')
     _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
     _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
 
