@@ -429,6 +429,15 @@ if st.session_state['ta_ticker_list']:
     _show_5d       = st.session_state.get('show_5d_tech', False)
     _show_5d_fg    = st.session_state.get('show_5d_fg', False)
 
+    # ── Sidebar: per-ticker show/hide checkboxes (all checked by default) ─────
+    st.sidebar.markdown("**Select Tickers to Show**")
+    _visible_tickers = [
+        t for t in _tickers
+        if st.sidebar.checkbox(t, value=True, key=f"show_chk_{t}")
+    ]
+    if not _visible_tickers:
+        _visible_tickers = _tickers   # guard: show all if nothing is checked
+
     # Format stored ISO dates as "28 Jun"
     _raw_dates = st.session_state.get('ta_history_dates', [])
     _day_labels = []
@@ -471,7 +480,7 @@ if st.session_state['ta_ticker_list']:
         # ── 5D active: MultiIndex DataFrame → native merged-header rendering ──────
         # Build column tuples: (group, sub-header)
         _mi_tuples = [('', 'Ticker')]
-        _mi_data   = {'Ticker': _tickers}
+        _mi_data   = {'Ticker': _visible_tickers}
 
         if _n_tts:
             for _i, _lbl in enumerate(_day_labels):
@@ -479,13 +488,13 @@ if st.session_state['ta_ticker_list']:
                 _mi_data[('Total Technical Score', _lbl)] = [
                     f"{((_scores_history.get(t) or [None]*5)[_i] or 0):.1f}%"
                     if (_scores_history.get(t) or [None]*5)[_i] is not None else ''
-                    for t in _tickers
+                    for t in _visible_tickers
                 ]
         else:
             _mi_tuples.append(('', 'Tech Score'))
             _mi_data[('', 'Tech Score')] = [
                 f"{_scores.get(t, 0):.1f}%" if _scores.get(t) is not None else ''
-                for t in _tickers
+                for t in _visible_tickers
             ]
 
         if _n_fg:
@@ -494,19 +503,19 @@ if st.session_state['ta_ticker_list']:
                 _mi_data[('Fear & Greed', _lbl)] = [
                     f"{((_fg_history.get(t) or [None]*5)[_i] or 0):.1f}%"
                     if (_fg_history.get(t) or [None]*5)[_i] is not None else ''
-                    for t in _tickers
+                    for t in _visible_tickers
                 ]
         else:
             _mi_tuples.append(('', 'Fear & Greed'))
             _mi_data[('', 'Fear & Greed')] = [
                 f"{_fg_scores.get(t, 0):.1f}%" if _fg_scores.get(t) is not None else ''
-                for t in _tickers
+                for t in _visible_tickers
             ]
 
         _mi_tuples.append(('', 'CANSLIM'))
         _mi_data[('', 'CANSLIM')] = [
             f"{_canslim_scores.get(t, 0):.1f}%" if _canslim_scores.get(t) is not None else ''
-            for t in _tickers
+            for t in _visible_tickers
         ]
 
         _mi_df = pd.DataFrame(_mi_data)
@@ -514,30 +523,19 @@ if st.session_state['ta_ticker_list']:
         st.dataframe(_mi_df, use_container_width=True, hide_index=True)
 
         _rc1, _rc2 = st.columns([3, 1])
-        _rc1.caption(f"{len(_tickers)} ticker(s) selected")
+        _rc1.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
         if _rc2.button("🗑️ Clear all", key="ta_main_clear_5d"):
             st.session_state['ta_ticker_list'] = []
-            st.rerun()
-
-        # Sidebar ticker visibility filter — all checked by default, uncheck to hide
-        _visible = st.sidebar.multiselect(
-            "Select Tickers to Show",
-            options=_tickers,
-            default=_tickers,
-            key="visible_tickers_5d",
-        )
-        if set(_visible) != set(_tickers):
-            st.session_state['ta_ticker_list'] = [t for t in _tickers if t in _visible]
             st.rerun()
 
     else:
         # ── Normal view: data_editor with Remove checkboxes ───────────────────────
         _tbl_data = {
-            'Remove':                [False] * len(_tickers),
-            'Ticker':                _tickers,
-            'Total Technical Score': [_scores.get(t) for t in _tickers],
-            'Fear & Greed':          [_fg_scores.get(t) for t in _tickers],
-            'CANSLIM Score':         [_canslim_scores.get(t) for t in _tickers],
+            'Remove':                [False] * len(_visible_tickers),
+            'Ticker':                _visible_tickers,
+            'Total Technical Score': [_scores.get(t) for t in _visible_tickers],
+            'Fear & Greed':          [_fg_scores.get(t) for t in _visible_tickers],
+            'CANSLIM Score':         [_canslim_scores.get(t) for t in _visible_tickers],
         }
         _col_cfg = {
             'Remove':                st.column_config.CheckboxColumn('✖ Remove', default=False),
@@ -550,13 +548,14 @@ if st.session_state['ta_ticker_list']:
             pd.DataFrame(_tbl_data), use_container_width=True,
             hide_index=True, column_config=_col_cfg, key='ta_ticker_table',
         )
-        _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
-        if _kept != st.session_state['ta_ticker_list']:
-            st.session_state['ta_ticker_list'] = _kept
+        _kept_visible = _edited[~_edited['Remove']]['Ticker'].tolist()
+        _removed = set(_visible_tickers) - set(_kept_visible)
+        if _removed:
+            st.session_state['ta_ticker_list'] = [t for t in _tickers if t not in _removed]
             st.rerun()
 
         _c1, _c2 = st.columns([3, 1])
-        _c1.caption(f"{len(_tickers)} ticker(s) selected")
+        _c1.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
         if _c2.button("🗑️ Clear all", key="ta_main_clear"):
             st.session_state['ta_ticker_list'] = []
             st.rerun()
