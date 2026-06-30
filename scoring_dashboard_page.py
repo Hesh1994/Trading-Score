@@ -483,11 +483,11 @@ if st.session_state['ta_ticker_list']:
             align-items: flex-end;
             height: 26px;
             margin-bottom: -2px;
-            padding-left: calc(36px + 12.5%);
+            padding-left: calc(35px + 12.5%);
             box-sizing: border-box;
         }
         .grp-hdr-cell {
-            width: 62.5%;
+            width: calc(62.5% - 25px);
             text-align: center;
             font-size: 0.72rem;
             font-weight: 700;
