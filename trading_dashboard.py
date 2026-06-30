@@ -288,7 +288,8 @@ def process_symbol_indicators(group, indicator_params, signal_weights, entry_sco
         signal_cols.append('bb_up_signal')
     
     if 'macd_line' in group.columns and 'macd_signal' in group.columns:
-        group['macd_signal_flag'] = np.where(group['macd_line'] > group['macd_signal'], 1, -1)
+        group['macd_signal_flag'] = np.where(group['macd_line'] > group['macd_signal'], 1,
+                                              np.where(group['macd_line'] < group['macd_signal'], -1, 0))
         signal_cols.append('macd_signal_flag')
     
     # Composite Score calculation

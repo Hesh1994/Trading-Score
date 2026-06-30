@@ -353,6 +353,8 @@ if included_indicators:
                 _buy_label, _sell_label = "Up > Down Score", "Up < Down Score"
             elif selected_indicator == "bollinger":
                 _buy_label, _sell_label = "Price < Lower Band Score", "Price > Upper Band Score"
+            elif selected_indicator == "macd":
+                _buy_label, _sell_label = "MACD > Signal Score", "MACD < Signal Score"
             else:
                 _buy_label, _sell_label = "Buy Score", "Sell Score"
             col1, col2 = st.columns(2)
