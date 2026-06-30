@@ -447,7 +447,7 @@ if st.session_state['ta_ticker_list']:
     _btn_slot, _ = st.columns([1, 5])
     with _btn_slot:
         if st.button(
-            "Collapse 5D ▲" if _show_5d else "Extend to 5D ▼",
+            "Collapse 5D ▲" if _show_5d else "Extend Technical Score to 5D ▼",
             key="toggle_5d_btn",
             use_container_width=True,
             help="Show / hide 5-day Technical Score evolution",
