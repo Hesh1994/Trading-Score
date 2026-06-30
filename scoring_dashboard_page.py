@@ -420,12 +420,14 @@ with _btn_col:
 
 # ── Editable table with remove checkboxes + score columns ────────────────────
 if st.session_state['ta_ticker_list']:
-    _scores = st.session_state.get('ta_scores', {})
-    _canslim_scores = st.session_state.get('ta_canslim_scores', {})
-    _fg_scores = st.session_state.get('ta_fg_scores', {})
-    _scores_history = st.session_state.get('ta_scores_history', {})
-    _tickers = st.session_state['ta_ticker_list']
-    _show_5d = st.session_state.get('show_5d_tech', False)
+    _scores        = st.session_state.get('ta_scores', {})
+    _canslim_scores= st.session_state.get('ta_canslim_scores', {})
+    _fg_scores     = st.session_state.get('ta_fg_scores', {})
+    _scores_history= st.session_state.get('ta_scores_history', {})
+    _fg_history    = st.session_state.get('ta_fg_history', {})
+    _tickers       = st.session_state['ta_ticker_list']
+    _show_5d       = st.session_state.get('show_5d_tech', False)
+    _show_5d_fg    = st.session_state.get('show_5d_fg', False)
 
     # Format stored ISO dates as "28 Jun"
     _raw_dates = st.session_state.get('ta_history_dates', [])
@@ -443,84 +445,89 @@ if st.session_state['ta_ticker_list']:
     if not _day_labels:
         _day_labels = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
 
-    # ── Button above the table, left-aligned over the Remove column ──
-    _btn_slot, _ = st.columns([1, 5])
-    with _btn_slot:
+    # ── Two toggle buttons side by side ──────────────────────────────────────
+    _b1, _b2, _ = st.columns([2, 2, 2])
+    with _b1:
         if st.button(
             "Collapse 5D ▲" if _show_5d else "Extend Technical Score to 5D ▼",
-            key="toggle_5d_btn",
-            use_container_width=True,
+            key="toggle_5d_btn", use_container_width=True,
             help="Show / hide 5-day Technical Score evolution",
         ):
             st.session_state['show_5d_tech'] = not _show_5d
             st.rerun()
+    with _b2:
+        if st.button(
+            "Collapse F&G 5D ▲" if _show_5d_fg else "Extend Fear & Greed to 5D ▼",
+            key="toggle_5d_fg_btn", use_container_width=True,
+            help="Show / hide 5-day Fear & Greed evolution",
+        ):
+            st.session_state['show_5d_fg'] = not _show_5d_fg
+            st.rerun()
 
-    # ── Build DataFrame ────────────────────────────────────────────────────────
-    # 5D ON : Remove | Ticker | day1…day5 | Fear&Greed | CANSLIM  (no standalone TTS)
-    # 5D OFF: Remove | Ticker | Fear&Greed | Total Technical Score | CANSLIM
+    # ── Column counts ─────────────────────────────────────────────────────────
+    # Layout: Remove(fixed 40px) | Ticker | [TTS days or TTS standalone] |
+    #         [F&G days or F&G standalone] | CANSLIM
+    _n_tts = 5 if (_show_5d and _scores_history) else 0
+    _n_fg  = 5 if (_show_5d_fg and _fg_history)  else 0
+    _n_flex = 1 + (_n_tts or 1) + (_n_fg or 1) + 1   # Ticker + TTS + F&G + CANSLIM
+    R = 40  # Remove column fixed width in px
+
+    # Helper: build inline-style merged group header
+    def _grp_hdr(label, col_start, col_span, n_flex):
+        off_px  =  R * (n_flex - col_start) / n_flex
+        off_pct =  col_start / n_flex * 100
+        w_px    = -R * col_span / n_flex
+        w_pct   =  col_span / n_flex * 100
+        return (
+            f'<div style="display:flex;align-items:flex-end;height:26px;'
+            f'margin-bottom:-2px;padding-left:calc({off_px:.2f}px + {off_pct:.4f}%);'
+            f'box-sizing:border-box;">'
+            f'<div style="width:calc({w_px:.2f}px + {w_pct:.4f}%);text-align:center;'
+            f'font-size:0.72rem;font-weight:700;color:rgb(28,131,225);'
+            f'background:rgba(28,131,225,0.08);border:1px solid rgba(28,131,225,0.30);'
+            f'border-bottom:none;border-radius:6px 6px 0 0;padding:3px 0;'
+            f'box-sizing:border-box;">{label}</div></div>'
+        )
+
+    # Render merged headers (must appear immediately before the data_editor)
+    if _n_tts:
+        st.markdown(_grp_hdr("Total Technical Score", 1, 5, _n_flex), unsafe_allow_html=True)
+    if _n_fg:
+        st.markdown(_grp_hdr("Fear & Greed", 1 + _n_tts, 5, _n_flex), unsafe_allow_html=True)
+
+    # ── Build DataFrame ───────────────────────────────────────────────────────
     _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
-    _col_cfg = {
+    _col_cfg  = {
         'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
         'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
     }
-
-    if _show_5d and _scores_history:
-        # 5 day columns (replace standalone TTS)
+    # TTS: 5 day cols OR standalone
+    if _n_tts:
         for _i, _lbl in enumerate(_day_labels):
-            _tbl_data[_lbl] = [(_scores_history.get(t) or [None] * 5)[_i] for t in _tickers]
-            _col_cfg[_lbl] = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
-        _tbl_data['Fear & Greed'] = [_fg_scores.get(t) for t in _tickers]
-        _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _tickers]
-        _col_cfg['Fear & Greed']  = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
-        _col_cfg['CANSLIM Score'] = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
-
-        # Merged group header: table has 8 equal cols after fixed Remove (~36px)
-        # Ticker=1/8=12.5%  |  5 day cols = 5/8=62.5%  |  F&G+CANSLIM = 2/8=25%
-        st.markdown("""
-        <style>
-        .grp-hdr-wrap {
-            display: flex;
-            align-items: flex-end;
-            height: 26px;
-            margin-bottom: -2px;
-            padding-left: calc(35px + 12.5%);
-            box-sizing: border-box;
-        }
-        .grp-hdr-cell {
-            width: calc(62.5% - 25px);
-            text-align: center;
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: rgb(28, 131, 225);
-            background: rgba(28, 131, 225, 0.08);
-            border: 1px solid rgba(28, 131, 225, 0.30);
-            border-bottom: none;
-            border-radius: 6px 6px 0 0;
-            padding: 3px 0;
-            box-sizing: border-box;
-        }
-        </style>
-        <div class="grp-hdr-wrap">
-            <div class="grp-hdr-cell">Total Technical Score</div>
-        </div>
-        """, unsafe_allow_html=True)
+            _k = f'TTS_{_lbl}'
+            _tbl_data[_k] = [(_scores_history.get(t) or [None]*5)[_i] for t in _tickers]
+            _col_cfg[_k]  = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
     else:
-        # Standalone Total Technical Score column
-        _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
         _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
-        _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
-        _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
         _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
-        _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
+    # F&G: 5 day cols OR standalone
+    if _n_fg:
+        for _i, _lbl in enumerate(_day_labels):
+            _k = f'FG_{_lbl}'
+            _tbl_data[_k] = [(_fg_history.get(t) or [None]*5)[_i] for t in _tickers]
+            _col_cfg[_k]  = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
+    else:
+        _tbl_data['Fear & Greed'] = [_fg_scores.get(t) for t in _tickers]
+        _col_cfg['Fear & Greed']  = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
+    # CANSLIM always last
+    _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _tickers]
+    _col_cfg['CANSLIM Score']  = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
 
-    _tbl    = pd.DataFrame(_tbl_data)
-    _tbl_key = 'ta_ticker_table_5d' if _show_5d else 'ta_ticker_table'
-    _edited = st.data_editor(
-        _tbl,
-        use_container_width=True,
-        hide_index=True,
-        column_config=_col_cfg,
-        key=_tbl_key,
+    _tbl     = pd.DataFrame(_tbl_data)
+    _tbl_key = f'ta_ticker_table_{int(_show_5d)}_{int(_show_5d_fg)}'
+    _edited  = st.data_editor(
+        _tbl, use_container_width=True, hide_index=True,
+        column_config=_col_cfg, key=_tbl_key,
     )
     _kept = _edited[~_edited['Remove']]['Ticker'].tolist()
     if _kept != st.session_state['ta_ticker_list']:
