@@ -440,8 +440,8 @@ if st.session_state['ta_ticker_list']:
             'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
             'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
-            'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.2f'),
-            'Fear & Greed': st.column_config.NumberColumn('Fear & Greed (0–100)', disabled=True, format='%.1f'),
+            'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%'),
+            'Fear & Greed': st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%'),
         },
         key="ta_ticker_table",
     )
