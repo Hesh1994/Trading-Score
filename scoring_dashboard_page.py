@@ -466,12 +466,12 @@ if st.session_state['ta_ticker_list']:
             _tbl_data[_lbl] = [(_scores_history.get(t) or [None] * 5)[_i] for t in _tickers]
             _col_cfg[_lbl] = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
 
-    _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
     _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
     _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
-    _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
+    _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
     _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
     _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
+    _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
 
     _tbl    = pd.DataFrame(_tbl_data)
     _tbl_key = 'ta_ticker_table_5d' if _show_5d else 'ta_ticker_table'
