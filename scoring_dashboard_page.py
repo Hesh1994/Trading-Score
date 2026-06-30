@@ -455,27 +455,42 @@ if st.session_state['ta_ticker_list']:
             st.session_state['show_5d_tech'] = not _show_5d
             st.rerun()
 
-    # ── Merged group header above the 5D columns ──────────────────────────────
-    # When 5D is active the table has: Remove(fixed ~36px) + 9 equal cols.
-    # 5D cols are cols 3-7 (0-indexed), so the group spans 5/9 ≈ 55.6% of the
-    # flexible width, offset by Remove(36px) + Ticker(1/9 ≈ 11.1%).
+    # ── Build DataFrame ────────────────────────────────────────────────────────
+    # 5D ON : Remove | Ticker | day1…day5 | Fear&Greed | CANSLIM  (no standalone TTS)
+    # 5D OFF: Remove | Ticker | Fear&Greed | Total Technical Score | CANSLIM
+    _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
+    _col_cfg = {
+        'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
+        'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
+    }
+
     if _show_5d and _scores_history:
+        # 5 day columns (replace standalone TTS)
+        for _i, _lbl in enumerate(_day_labels):
+            _tbl_data[_lbl] = [(_scores_history.get(t) or [None] * 5)[_i] for t in _tickers]
+            _col_cfg[_lbl] = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
+        _tbl_data['Fear & Greed'] = [_fg_scores.get(t) for t in _tickers]
+        _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _tickers]
+        _col_cfg['Fear & Greed']  = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
+        _col_cfg['CANSLIM Score'] = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
+
+        # Merged group header: table has 8 equal cols after fixed Remove (~36px)
+        # Ticker=1/8=12.5%  |  5 day cols = 5/8=62.5%  |  F&G+CANSLIM = 2/8=25%
         st.markdown("""
         <style>
         .grp-hdr-wrap {
             display: flex;
             align-items: flex-end;
-            height: 28px;
-            margin-bottom: -2px;           /* flush against data_editor header */
-            padding-left: calc(36px + 11.1%);   /* skip Remove + Ticker */
+            height: 26px;
+            margin-bottom: -2px;
+            padding-left: calc(36px + 12.5%);
             box-sizing: border-box;
         }
         .grp-hdr-cell {
-            width: 55.6%;                  /* span the 5 day columns */
+            width: 62.5%;
             text-align: center;
             font-size: 0.72rem;
             font-weight: 700;
-            letter-spacing: 0.02em;
             color: rgb(28, 131, 225);
             background: rgba(28, 131, 225, 0.08);
             border: 1px solid rgba(28, 131, 225, 0.30);
@@ -489,24 +504,14 @@ if st.session_state['ta_ticker_list']:
             <div class="grp-hdr-cell">Total Technical Score</div>
         </div>
         """, unsafe_allow_html=True)
-
-    # ── Build DataFrame — 5D day-columns appear between Ticker and Fear & Greed ──
-    _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
-    _col_cfg = {
-        'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
-        'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
-    }
-    if _show_5d and _scores_history:
-        for _i, _lbl in enumerate(_day_labels):
-            _tbl_data[_lbl] = [(_scores_history.get(t) or [None] * 5)[_i] for t in _tickers]
-            _col_cfg[_lbl] = st.column_config.NumberColumn(_lbl, disabled=True, format='%.1f%%')
-
-    _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
-    _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
-    _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
-    _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
-    _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
-    _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
+    else:
+        # Standalone Total Technical Score column
+        _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
+        _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
+        _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
+        _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
+        _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
+        _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
 
     _tbl    = pd.DataFrame(_tbl_data)
     _tbl_key = 'ta_ticker_table_5d' if _show_5d else 'ta_ticker_table'
