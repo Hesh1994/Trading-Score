@@ -455,7 +455,42 @@ if st.session_state['ta_ticker_list']:
             st.session_state['show_5d_tech'] = not _show_5d
             st.rerun()
 
-    # ── Build DataFrame — 5D day-columns appear immediately left of Total Technical Score ──
+    # ── Merged group header above the 5D columns ──────────────────────────────
+    # When 5D is active the table has: Remove(fixed ~36px) + 9 equal cols.
+    # 5D cols are cols 3-7 (0-indexed), so the group spans 5/9 ≈ 55.6% of the
+    # flexible width, offset by Remove(36px) + Ticker(1/9 ≈ 11.1%).
+    if _show_5d and _scores_history:
+        st.markdown("""
+        <style>
+        .grp-hdr-wrap {
+            display: flex;
+            align-items: flex-end;
+            height: 28px;
+            margin-bottom: -2px;           /* flush against data_editor header */
+            padding-left: calc(36px + 11.1%);   /* skip Remove + Ticker */
+            box-sizing: border-box;
+        }
+        .grp-hdr-cell {
+            width: 55.6%;                  /* span the 5 day columns */
+            text-align: center;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: rgb(28, 131, 225);
+            background: rgba(28, 131, 225, 0.08);
+            border: 1px solid rgba(28, 131, 225, 0.30);
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            padding: 3px 0;
+            box-sizing: border-box;
+        }
+        </style>
+        <div class="grp-hdr-wrap">
+            <div class="grp-hdr-cell">Total Technical Score</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Build DataFrame — 5D day-columns appear between Ticker and Fear & Greed ──
     _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
     _col_cfg = {
         'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
