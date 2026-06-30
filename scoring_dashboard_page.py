@@ -443,43 +443,17 @@ if st.session_state['ta_ticker_list']:
     if not _day_labels:
         _day_labels = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
 
-    # ── Inject CSS: shrink the button and pull it up into the data_editor header row ──
-    # margin-bottom on the button wrapper overlaps it with the table header (~38px tall).
-    # The st.columns ratio positions it over the "Total Technical Score" header cell.
-    # Without 5D: Remove(~5%) + Ticker(~18%) = 23% offset; TTS spans ~26%.
-    # With 5D on: 5 extra cols push TTS right by ~5*9% = 45% more → 68% offset.
-    st.markdown("""
-    <style>
-    div[data-testid="stHorizontalBlock"]:has(> div > div[data-testid="stVerticalBlock"] .five-d-btn) {
-        margin-bottom: -52px;
-        position: relative;
-        z-index: 10;
-    }
-    .five-d-btn button {
-        height: 26px !important;
-        min-height: 0 !important;
-        padding: 0 8px !important;
-        font-size: 0.68rem !important;
-        line-height: 1 !important;
-        border-radius: 4px !important;
-    }
-    </style>""", unsafe_allow_html=True)
-
-    _pre_pct  = 68 if _show_5d else 23
-    _btn_pct  = 26
-    _post_pct = max(1, 100 - _pre_pct - _btn_pct)
-    _, _toggle_slot, _ = st.columns([_pre_pct, _btn_pct, _post_pct])
-    with _toggle_slot:
-        st.markdown('<span class="five-d-btn">', unsafe_allow_html=True)
+    # ── Button above the table, left-aligned over the Remove column ──
+    _btn_slot, _ = st.columns([1, 5])
+    with _btn_slot:
         if st.button(
-            "📅 5D ▲" if _show_5d else "📅 5D ▼",
+            "Collapse 5D ▲" if _show_5d else "Extend to 5D ▼",
             key="toggle_5d_btn",
             use_container_width=True,
             help="Show / hide 5-day Technical Score evolution",
         ):
             st.session_state['show_5d_tech'] = not _show_5d
             st.rerun()
-        st.markdown('</span>', unsafe_allow_html=True)
 
     # ── Build DataFrame — 5D day-columns appear immediately left of Total Technical Score ──
     _tbl_data = {'Remove': [False] * len(_tickers), 'Ticker': _tickers}
@@ -495,7 +469,7 @@ if st.session_state['ta_ticker_list']:
     _tbl_data['Total Technical Score'] = [_scores.get(t) for t in _tickers]
     _tbl_data['CANSLIM Score']         = [_canslim_scores.get(t) for t in _tickers]
     _tbl_data['Fear & Greed']          = [_fg_scores.get(t) for t in _tickers]
-    _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%) 📅', disabled=True, format='%.1f%%')
+    _col_cfg['Total Technical Score']  = st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%')
     _col_cfg['CANSLIM Score']          = st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%')
     _col_cfg['Fear & Greed']           = st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%')
 
