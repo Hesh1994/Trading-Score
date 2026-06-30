@@ -14,7 +14,7 @@ import sys, os
 _root = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 if _root not in sys.path:
     sys.path.insert(0, _root)
-from scoring_module import score_universe, results_to_dataframe
+from scoring_module import score_universe, results_to_dataframe, score_stock
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 try:
     from canslim_module import (COUNTRY_EXCHANGES, EXCHANGE_SUFFIX,
@@ -423,14 +423,18 @@ if st.session_state['ta_ticker_list']:
     _scores = st.session_state.get('ta_scores', {})
     _canslim_scores = st.session_state.get('ta_canslim_scores', {})
     _fg_scores = st.session_state.get('ta_fg_scores', {})
+    _scores_history = st.session_state.get('ta_scores_history', {})
+    _fg_history = st.session_state.get('ta_fg_history', {})
     _tickers = st.session_state['ta_ticker_list']
     # Always include score columns so table structure never changes (avoids key conflict)
     _tbl = pd.DataFrame({
         'Remove': [False] * len(_tickers),
         'Ticker': _tickers,
         'Total Technical Score': [_scores.get(t) for t in _tickers],
+        'Tech Score (5d)': [_scores_history.get(t) for t in _tickers],
         'CANSLIM Score': [_canslim_scores.get(t) for t in _tickers],
         'Fear & Greed': [_fg_scores.get(t) for t in _tickers],
+        'F&G (5d)': [_fg_history.get(t) for t in _tickers],
     })
     _edited = st.data_editor(
         _tbl,
@@ -440,8 +444,10 @@ if st.session_state['ta_ticker_list']:
             'Remove': st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker': st.column_config.TextColumn('Ticker', disabled=True),
             'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
+            'Tech Score (5d)': st.column_config.LineChartColumn('Tech Score 5d', y_min=0, y_max=100),
             'CANSLIM Score': st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%'),
             'Fear & Greed': st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%'),
+            'F&G (5d)': st.column_config.LineChartColumn('Fear & Greed 5d', y_min=0, y_max=100),
         },
         key="ta_ticker_table",
     )
@@ -577,6 +583,37 @@ if _run_btn_header:
                 for r in results
                 if 'fear_greed' in r['signals'] and 'value' in r['signals']['fear_greed']
             }
+
+            # 5-day score history (oldest → newest) for sparklines
+            _fg_enabled = indicator_config.get('fear_greed', {}).get('enabled', False)
+            _tech_history = {}
+            _fg_history = {}
+            for ticker in symbols_list:
+                _tech_days = []
+                _fg_days = []
+                for offset in range(4, -1, -1):
+                    _trimmed = {
+                        interval: {
+                            t: (df.iloc[:-offset] if offset > 0 else df)
+                            for t, df in ticker_dfs.items()
+                        }
+                        for interval, ticker_dfs in tickers_data_by_interval.items()
+                    }
+                    _r = score_stock(ticker, _trimmed, indicator_config, global_config)
+                    _tech_days.append(round(
+                        sum(1 for sig in _r['signals'].values()
+                            if sig.get('buy') and 'error' not in sig)
+                        / _n_indicators * 100, 1
+                    ))
+                    if _fg_enabled and 'fear_greed' in _r['signals'] and 'value' in _r['signals']['fear_greed']:
+                        _fg_days.append(round(_r['signals']['fear_greed']['value'], 1))
+                    else:
+                        _fg_days.append(None)
+                _tech_history[ticker] = _tech_days
+                if any(v is not None for v in _fg_days):
+                    _fg_history[ticker] = _fg_days
+            st.session_state['ta_scores_history'] = _tech_history
+            st.session_state['ta_fg_history'] = _fg_history
 
         except Exception as e:
             st.error(f"Error during scoring: {str(e)}")
