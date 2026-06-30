@@ -476,23 +476,33 @@ if st.session_state['ta_ticker_list']:
     # ── Single HTML row with group headers, using flex to mirror AG Grid exactly ──
     # Remove col is ~40px fixed; all other cols share remaining width equally via flex.
     if _n_tts or _n_fg:
-        _GRP = (
-            'text-align:center;font-size:0.72rem;font-weight:700;'
-            'color:rgb(28,131,225);background:rgba(28,131,225,0.08);'
-            'border:1px solid rgba(28,131,225,0.30);border-bottom:none;'
-            'border-radius:6px 6px 0 0;padding:3px 2px;box-sizing:border-box;'
+        _CELL = (
+            'display:flex;align-items:center;justify-content:center;'
+            'font-size:0.78rem;font-weight:700;letter-spacing:0.02em;'
+            'color:rgb(28,131,225);background:rgba(28,131,225,0.10);'
+            'border-top:2px solid rgba(28,131,225,0.60);'
+            'border-left:2px solid rgba(28,131,225,0.60);'
+            'border-right:2px solid rgba(28,131,225,0.60);'
+            'border-bottom:none;'
+            'border-radius:8px 8px 0 0;box-sizing:border-box;'
         )
         _SPC = 'box-sizing:border-box;'
-        tts_cell = f'<div style="flex:{_f_tts};{_GRP}">Total Technical Score</div>' if _n_tts else f'<div style="flex:1;{_SPC}"></div>'
-        fg_cell  = f'<div style="flex:{_f_fg};{_GRP}">Fear &amp; Greed</div>'       if _n_fg  else f'<div style="flex:1;{_SPC}"></div>'
+        tts_cell = (
+            f'<div style="flex:5;{_CELL}">Total Technical Score</div>'
+            if _n_tts else f'<div style="flex:1;{_SPC}"></div>'
+        )
+        fg_cell = (
+            f'<div style="flex:5;{_CELL}">Fear &amp; Greed</div>'
+            if _n_fg else f'<div style="flex:1;{_SPC}"></div>'
+        )
         st.markdown(
-            f'<div style="display:flex;align-items:flex-end;height:26px;margin-bottom:-10px;">'
+            f'<div style="display:flex;align-items:flex-end;height:38px;margin-bottom:-10px;">'
             f'  <div style="min-width:40px;width:40px;flex-shrink:0;"></div>'
-            f'  <div style="flex:1;display:flex;min-width:0;">'
-            f'    <div style="flex:1;{_SPC}"></div>'   # Ticker spacer
+            f'  <div style="flex:1;display:flex;min-width:0;height:100%;">'
+            f'    <div style="flex:1;{_SPC}"></div>'
             f'    {tts_cell}'
             f'    {fg_cell}'
-            f'    <div style="flex:1;{_SPC}"></div>'   # CANSLIM spacer
+            f'    <div style="flex:1;{_SPC}"></div>'
             f'  </div>'
             f'</div>',
             unsafe_allow_html=True,
