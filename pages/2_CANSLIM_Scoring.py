@@ -350,30 +350,6 @@ if st.session_state.get('canslim_results'):
 
     filtered_results = results
 
-    # ── Ranked summary table ──────────────────────────────────────────────
-    st.subheader("🏆 Ranked Scoring Table")
-
-    rows, rank, prev = [], 1, None
-    for i, r in enumerate(filtered_results):
-        if r['score'] != prev:
-            rank = i + 1
-        rows.append({
-            'Rank':               rank,
-            'Ticker':             r['symbol'],
-            'Sector':             r.get('sector') or '—',
-            'Industry':           r.get('industry') or '—',
-            'Total Score (/100)': r['score'],
-            'Criteria Met':       f"{r['criteria_met']} / 10",
-            'Data Gaps':          r['data_gaps'],
-        })
-        prev = r['score']
-
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    # ── Per-ticker detailed breakdown ─────────────────────────────────────
-    st.subheader("🔍 Detailed Breakdown")
-    st.caption("Expand any ticker to see its full metrics, scoring, and quarterly trend.")
-
     # Criterion label → (session_state_key, type, threshold)
     _CRIT_KEY_MAP = {
         'Recent Qtr EPS YoY Growth':     ('eps_gr_q4',     'pct',  0.20),
@@ -387,13 +363,76 @@ if st.session_state.get('canslim_results'):
         'ROE YoY Growth':                ('roe_yoy_gr',    'pct',  0.17),
         'Institutional Ownership':       ('inst_pct',      'pct',  0.35),
     }
-    for r in filtered_results:
+
+    def _calc_adjusted(r):
+        """Return (adj_score, adj_criteria_met) using any manual widget values."""
+        sym = r['symbol']
+        adj_pts, adj_met = 0, 0
+        for sd in r['score_details']:
+            info = _CRIT_KEY_MAP.get(sd['Criterion'])
+            if sd['Met'] is None and info:
+                mck, mtyp, mthresh = info
+                mv = st.session_state.get(f"man_{sym}_{mck}")
+                if mtyp == 'bool':
+                    mpts = 10 if mv is True else 0
+                    if mv is True:
+                        adj_met += 1
+                else:
+                    mv_dec = float(mv) / 100 if mv else 0.0
+                    mpts = 10 if mv_dec > mthresh else 0
+                    if mv_dec > mthresh:
+                        adj_met += 1
+                adj_pts += mpts
+            else:
+                adj_pts += sd['Points']
+                if sd['Met'] is True:
+                    adj_met += 1
+        return adj_pts, adj_met
+
+    # ── Ranked summary table ──────────────────────────────────────────────
+    st.subheader("🏆 Ranked Scoring Table")
+
+    # Pre-compute adjusted scores (reads session_state widget values set by expanders)
+    _adj_scores = {r['symbol']: _calc_adjusted(r) for r in filtered_results}
+
+    # Sort by adjusted score descending for correct ranking
+    _sorted_results = sorted(filtered_results,
+                             key=lambda r: _adj_scores[r['symbol']][0], reverse=True)
+
+    rows, rank, prev = [], 1, None
+    for i, r in enumerate(_sorted_results):
+        sym = r['symbol']
+        _ascore, _amet = _adj_scores[sym]
+        _has_manual = _ascore != r['score']
+        if _ascore != prev:
+            rank = i + 1
+        rows.append({
+            'Rank':               rank,
+            'Ticker':             sym,
+            'Sector':             r.get('sector') or '—',
+            'Industry':           r.get('industry') or '—',
+            'Total Score (/100)': f"{_ascore} ✏️" if _has_manual else _ascore,
+            'Criteria Met':       f"{_amet} / 10",
+            'Data Gaps':          r['data_gaps'],
+        })
+        prev = _ascore
+
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── Per-ticker detailed breakdown ─────────────────────────────────────
+    st.subheader("🔍 Detailed Breakdown")
+    st.caption("Expand any ticker to see its full metrics, scoring, and quarterly trend.")
+    for r in _sorted_results:
         sym  = r['symbol']
         lq   = r['q_dates'][0] if r['q_dates'] else "—"
         la   = r['a_dates'][0] if r['a_dates'] else "—"
         m    = r['metrics']
+        _ascore, _amet = _adj_scores[sym]
+        _exp_label = (f"{sym}  —  {_ascore}/100 ✏️  |  {_amet}/10 criteria met  |  {r['data_gaps']} data gap(s)"
+                      if _ascore != r['score'] else
+                      f"{sym}  —  {r['score']}/100   |  {r['criteria_met']}/10 criteria met  |  {r['data_gaps']} data gap(s)")
 
-        with st.expander(f"{sym}  —  {r['score']}/100   |  {r['criteria_met']}/10 criteria met  |  {r['data_gaps']} data gap(s)"):
+        with st.expander(_exp_label):
 
             # Metrics table
             st.markdown("**Computed Metrics**")
@@ -459,38 +498,17 @@ if st.session_state.get('canslim_results'):
                                 key=_wkey,
                             )
 
-                # Recalculate adjusted score — read values directly from session state
-                _adj_pts = 0
-                _adj_met = 0
-                for _sd in r['score_details']:
-                    _info = _CRIT_KEY_MAP.get(_sd['Criterion'])
-                    if _sd['Met'] is None and _info:
-                        _mck, _mtyp, _mthresh = _info
-                        _wkey = f"man_{sym}_{_mck}"
-                        _mv = st.session_state.get(_wkey)
-                        if _mtyp == 'bool':
-                            _mpts = 10 if _mv is True else 0
-                            if _mv is True:
-                                _adj_met += 1
-                        else:
-                            _mv_dec = float(_mv) / 100 if _mv else 0.0
-                            _mpts = 10 if _mv_dec > _mthresh else 0
-                            if _mv_dec > _mthresh:
-                                _adj_met += 1
-                        _adj_pts += _mpts
-                    else:
-                        _adj_pts += _sd['Points']
-                        if _sd['Met'] is True:
-                            _adj_met += 1
+                # Score is recalculated by _calc_adjusted() at the top of the page
+                # and reflected in _ascore/_amet already used in the summary table.
+                # Show a note so the user knows edits are live.
+                st.caption("↑ Values above update the score in the ranked table immediately.")
 
-                _delta = _adj_pts - r['score']
-                st.metric(
-                    f"Adjusted Score: {sym}",
-                    f"{_adj_pts} / 100",
-                    delta=f"{_delta:+d} pts" if _delta != 0 else None,
-                )
-            else:
-                st.metric(f"Total CANSLIM Score: {sym}", f"{r['score']} / 100")
+            _delta = _ascore - r['score']
+            st.metric(
+                f"Total CANSLIM Score: {sym}",
+                f"{_ascore} / 100",
+                delta=f"{_delta:+d} pts (manual)" if _delta != 0 else None,
+            )
 
             # Quarterly trend
             st.markdown("**Last 4 Quarters — YoY Growth Trend**")
