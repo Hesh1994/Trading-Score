@@ -414,17 +414,17 @@ st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 st.sidebar.subheader("⚖️ Model Weights")
 _fg_active = indicator_config.get('fear_greed', {}).get('enabled', False)
 
-_w_tech = st.sidebar.slider(
+_w_tech = st.sidebar.number_input(
     "Total Technical Score %", min_value=0, max_value=100, value=100, step=5, key="w_tech"
 )
 _w_fg = 0
 if _fg_active:
-    _w_fg = st.sidebar.slider(
+    _w_fg = st.sidebar.number_input(
         "Fear & Greed %", min_value=0, max_value=100, value=100, step=5, key="w_fg"
     )
 _w_canslim = 0
 if _canslim_enabled:
-    _w_canslim = st.sidebar.slider(
+    _w_canslim = st.sidebar.number_input(
         "CANSLIM %", min_value=0, max_value=100, value=100, step=5, key="w_canslim"
     )
 
