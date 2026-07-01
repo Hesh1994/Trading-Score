@@ -374,6 +374,22 @@ if st.session_state.get('canslim_results'):
     st.subheader("🔍 Detailed Breakdown")
     st.caption("Expand any ticker to see its full metrics, scoring, and quarterly trend.")
 
+    # Criterion label → (session_state_key, type, threshold)
+    _CRIT_KEY_MAP = {
+        'Recent Qtr EPS YoY Growth':     ('eps_gr_q4',     'pct',  0.20),
+        'EPS Acceleration (3 Qtrs)':     ('eps_accel',     'bool', None),
+        'EPS 3Y Avg Annual Growth':      ('eps_3y_avg',    'pct',  0.25),
+        'EPS 5Y Avg Annual Growth':      ('eps_5y_avg',    'pct',  0.25),
+        'Recent Qtr Revenue YoY Growth': ('rev_gr_q4',     'pct',  0.25),
+        'Avg Revenue Growth (3 Qtrs)':   ('rev_3q_avg',    'pct',  0.25),
+        'Pretax Income Annual Growth':   ('pretax_ann_gr', 'pct',  0.15),
+        'Net Income Annual Growth':      ('ni_ann_gr',     'pct',  0.25),
+        'ROE YoY Growth':                ('roe_yoy_gr',    'pct',  0.17),
+        'Institutional Ownership':       ('inst_pct',      'pct',  0.35),
+    }
+    if 'canslim_manual' not in st.session_state:
+        st.session_state['canslim_manual'] = {}
+
     for r in filtered_results:
         sym  = r['symbol']
         lq   = r['q_dates'][0] if r['q_dates'] else "—"
@@ -410,7 +426,95 @@ if st.session_state.get('canslim_results'):
                           for sd in r['score_details']]
             st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
 
-            st.metric(f"Total CANSLIM Score: {sym}", f"{r['score']} / 100")
+            # ── Manual gap filling ─────────────────────────────────────────
+            _sym_manual = st.session_state['canslim_manual'].setdefault(sym, {})
+            _gap_criteria = [sd for sd in r['score_details'] if sd['Met'] is None]
+
+            if _gap_criteria:
+                st.markdown("**✏️ Fill Data Gaps Manually**")
+                st.caption(f"{len(_gap_criteria)} criterion/criteria couldn't be computed — enter values below to adjust the score.")
+
+                # Boolean gap (eps_accel) — use selectbox
+                _bool_gaps = [sd for sd in _gap_criteria
+                              if _CRIT_KEY_MAP.get(sd['Criterion'], ('','pct',0))[1] == 'bool']
+                for _bsd in _bool_gaps:
+                    _bck = _CRIT_KEY_MAP[_bsd['Criterion']][0]
+                    _stored_bool = _sym_manual.get(_bck)
+                    _bool_opts = [None, True, False]
+                    _bool_labels = {None: "— no data —", True: "✅ TRUE (accelerating)", False: "❌ FALSE"}
+                    _new_bool = st.selectbox(
+                        _bsd['Criterion'],
+                        options=_bool_opts,
+                        index=_bool_opts.index(_stored_bool) if _stored_bool in _bool_opts else 0,
+                        format_func=lambda x, labs=_bool_labels: labs.get(x, "—"),
+                        key=f"man_{sym}_{_bck}",
+                    )
+                    _sym_manual[_bck] = _new_bool
+
+                # Percentage gaps — editable dataframe
+                _pct_gaps = [sd for sd in _gap_criteria
+                             if _CRIT_KEY_MAP.get(sd['Criterion'], ('','pct',0))[1] == 'pct']
+                if _pct_gaps:
+                    _pct_rows = []
+                    for _psd in _pct_gaps:
+                        _pck = _CRIT_KEY_MAP.get(_psd['Criterion'], ('','pct',0))[0]
+                        _stored_pct = _sym_manual.get(_pck)
+                        _pct_rows.append({
+                            'Criterion':    _psd['Criterion'],
+                            'Value (%)':    round(_stored_pct * 100, 2) if _stored_pct is not None else None,
+                            'Threshold':    _psd['Threshold'],
+                        })
+                    _edited = st.data_editor(
+                        pd.DataFrame(_pct_rows),
+                        column_config={
+                            'Criterion':  st.column_config.TextColumn(disabled=True),
+                            'Value (%)':  st.column_config.NumberColumn(
+                                format='%.2f',
+                                help='Enter value as a percentage (e.g. 25 for 25%)'),
+                            'Threshold':  st.column_config.TextColumn(disabled=True),
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        key=f"gap_editor_{sym}",
+                    )
+                    for _, _row in _edited.iterrows():
+                        _pck = _CRIT_KEY_MAP.get(_row['Criterion'], ('','pct',0))[0]
+                        if _pck:
+                            _v = _row['Value (%)']
+                            _sym_manual[_pck] = _v / 100 if pd.notna(_v) and _v is not None else None
+
+                # Recalculate adjusted score using manual overrides
+                _adj_pts = 0
+                _adj_met = 0
+                for _sd in r['score_details']:
+                    _info = _CRIT_KEY_MAP.get(_sd['Criterion'])
+                    if _sd['Met'] is None and _info:
+                        _mck, _mtyp, _mthresh = _info
+                        _mv = _sym_manual.get(_mck)
+                        if _mv is not None:
+                            if _mtyp == 'bool':
+                                _mpts = 10 if _mv is True else 0
+                                if _mv is True:
+                                    _adj_met += 1
+                            else:
+                                _mpts = 10 if _mv > _mthresh else 0
+                                if _mv > _mthresh:
+                                    _adj_met += 1
+                            _adj_pts += _mpts
+                        # else gap still unfilled — 0 pts (already counted via += 0)
+                    else:
+                        _adj_pts += _sd['Points']
+                        if _sd['Met'] is True:
+                            _adj_met += 1
+
+                _delta = _adj_pts - r['score']
+                st.metric(
+                    f"Total CANSLIM Score: {sym} (adjusted)",
+                    f"{_adj_pts} / 100",
+                    delta=f"{_delta:+d} pts from manual entries" if _delta != 0 else None,
+                )
+            else:
+                st.metric(f"Total CANSLIM Score: {sym}", f"{r['score']} / 100")
 
             # Quarterly trend
             st.markdown("**Last 4 Quarters — YoY Growth Trend**")
