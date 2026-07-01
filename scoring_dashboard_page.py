@@ -268,12 +268,20 @@ _all_ind_keys = list(INDICATORS_CONFIG.keys())
 _label_to_key = {indicator_config[k]['label']: k for k in _all_ind_keys}
 _default_labels = [indicator_config[k]['label'] for k in _all_ind_keys if indicator_config[k].get('enabled', True)]
 
+_CANSLIM_LABEL = "CANSLIM Score"
+_ind_options   = [indicator_config[k]['label'] for k in _all_ind_keys]
+_ind_defaults  = list(_default_labels)
+if _fmp_module_ok:
+    _ind_options.append(_CANSLIM_LABEL)
+    _ind_defaults.append(_CANSLIM_LABEL)
+
 _selected_labels = st.sidebar.multiselect(
     "Select indicators",
-    options=[indicator_config[k]['label'] for k in _all_ind_keys],
-    default=_default_labels,
+    options=_ind_options,
+    default=_ind_defaults,
     key="indicators_multiselect"
 )
+_canslim_enabled = _fmp_module_ok and (_CANSLIM_LABEL in _selected_labels)
 
 included_indicators = {}
 for ind_key in _all_ind_keys:
@@ -545,11 +553,12 @@ if st.session_state['ta_ticker_list']:
                 for t in _visible_tickers
             ]
 
-        _mi_tuples.append(('', 'CANSLIM'))
-        _mi_data[('', 'CANSLIM')] = [
-            f"{_canslim_scores.get(t, 0):.1f}%" if _canslim_scores.get(t) is not None else ''
-            for t in _visible_tickers
-        ]
+        if _canslim_enabled:
+            _mi_tuples.append(('', 'CANSLIM'))
+            _mi_data[('', 'CANSLIM')] = [
+                f"{_canslim_scores.get(t, 0):.1f}%" if _canslim_scores.get(t) is not None else ''
+                for t in _visible_tickers
+            ]
 
         _mi_df = pd.DataFrame(_mi_data)
         _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
@@ -568,8 +577,9 @@ if st.session_state['ta_ticker_list']:
             'Ticker':                _visible_tickers,
             'Total Technical Score': [_scores.get(t) for t in _visible_tickers],
             'Fear & Greed':          [_fg_scores.get(t) for t in _visible_tickers],
-            'CANSLIM Score':         [_canslim_scores.get(t) for t in _visible_tickers],
         }
+        if _canslim_enabled:
+            _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _visible_tickers]
         _col_cfg = {
             'Remove':                st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker':                st.column_config.TextColumn('Ticker', disabled=True),
@@ -765,7 +775,7 @@ if _run_btn_header:
             st.stop()
     
     # ========== CANSLIM SCORING (same tickers) ==========
-    if fmp_key and _fmp_module_ok:
+    if fmp_key and _canslim_enabled:
         with st.spinner("📊 Calculating CANSLIM scores…"):
             try:
                 _canslim_results = score_canslim_universe(symbols_list, fmp_api_key=fmp_key)
