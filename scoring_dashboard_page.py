@@ -10,7 +10,7 @@ import yfinance as yf
 import datetime as dt
 import requests
 import io
-import sys, os
+import sys, os, json
 _root = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 if _root not in sys.path:
     sys.path.insert(0, _root)
@@ -50,17 +50,51 @@ st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0
 
 st.sidebar.header("⚙️ Configuration")
 
-# ── FMP API Key (shared across all pages via session state) ───────────────
+# ── FMP API Key — persistent key manager ─────────────────────────────────
+_KEY_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_fmp_key")
+
+# Load saved key once per session
+if 'fmp_key_loaded' not in st.session_state:
+    try:
+        if os.path.exists(_KEY_FILE):
+            with open(_KEY_FILE) as _kf:
+                _saved_key = json.load(_kf).get('key', '')
+            if _saved_key:
+                st.session_state['shared_fmp_key'] = _saved_key
+    except Exception:
+        pass
+    st.session_state['fmp_key_loaded'] = True
+
 st.sidebar.subheader("🔑 FMP API Key")
+_show_key = st.sidebar.checkbox("Show key", key="fmp_show_toggle")
 fmp_key = st.sidebar.text_input(
     "FMP API Key",
-    type="password",
+    type="default" if _show_key else "password",
     placeholder="Enter once — used by all pages",
     key="shared_fmp_key",
-    help="Get a free key at financialmodelingprep.com — used for Exchange Lookup and CANSLIM data."
+    help="Get a free key at financialmodelingprep.com — used for Exchange Lookup and CANSLIM data.",
 )
+
 if fmp_key:
-    st.sidebar.success("FMP key set — available on all pages")
+    _is_saved = os.path.exists(_KEY_FILE)
+    st.sidebar.success("Key active" + (" · saved" if _is_saved else ""))
+    _kb1, _kb2 = st.sidebar.columns(2)
+    if _kb1.button("💾 Save key", key="fmp_save_btn", use_container_width=True):
+        try:
+            with open(_KEY_FILE, 'w') as _kf:
+                json.dump({'key': fmp_key}, _kf)
+            st.sidebar.success("Key saved!")
+        except Exception as _e:
+            st.sidebar.error(f"Could not save: {_e}")
+    if _kb2.button("🗑️ Remove key", key="fmp_remove_btn", use_container_width=True):
+        st.session_state['shared_fmp_key'] = ''
+        try:
+            os.remove(_KEY_FILE)
+        except Exception:
+            pass
+        st.rerun()
+else:
+    st.sidebar.caption("Enter your FMP API key above.")
 
 # Data Range
 st.sidebar.subheader("📅 Data Range")
