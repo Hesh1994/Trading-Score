@@ -70,6 +70,33 @@ else:
     st.sidebar.warning("🔑 No FMP key — enter it on the **Technical Analysis** page sidebar")
 
 # ============================================================================
+# SIDEBAR — IMPORT FROM SCORING DASHBOARD
+# ============================================================================
+
+st.sidebar.subheader("📥 Import from Scoring Dashboard")
+_ta_tickers = st.session_state.get('ta_ticker_list', [])
+if _ta_tickers:
+    st.sidebar.caption(f"{len(_ta_tickers)} ticker(s) in Scoring Dashboard: " +
+                       " · ".join(f"`{t}`" for t in _ta_tickers))
+    _ic1, _ic2 = st.sidebar.columns(2)
+    if _ic1.button("➕ Add to list", key="import_ta_tickers_btn", use_container_width=True):
+        _added = 0
+        for _t in _ta_tickers:
+            if _t not in st.session_state['canslim_ticker_list']:
+                st.session_state['canslim_ticker_list'].append(_t)
+                _added += 1
+        st.sidebar.success(f"Added {_added} ticker(s)")
+        st.rerun()
+    if _ic2.button("🔄 Replace list", key="replace_ta_tickers_btn", use_container_width=True):
+        st.session_state['canslim_ticker_list'] = list(_ta_tickers)
+        st.sidebar.success(f"List replaced with {len(_ta_tickers)} ticker(s)")
+        st.rerun()
+else:
+    st.sidebar.caption("No tickers found in the Scoring Dashboard. Go to the main page and add tickers first.")
+
+st.sidebar.divider()
+
+# ============================================================================
 # SIDEBAR — TICKER FINDER
 # ============================================================================
 
