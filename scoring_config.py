@@ -174,6 +174,18 @@ INDICATORS_CONFIG = {
         'sell_score': 1.5,
     },
 
+    'volume': {
+        'enabled': True,
+        'label': 'Volume',
+        'interval': 'daily',
+        'parameters': {
+            'period': 20,              # Days to average volume over
+            'min_volume': 1000000.0,   # Minimum average volume for buy signal
+        },
+        'buy_score': 1.0,
+        'sell_score': 1.0,
+    },
+
     'week52_high': {
         'enabled': True,
         'label': '52-Week High',

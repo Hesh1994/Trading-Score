@@ -291,6 +291,8 @@ if included_indicators:
             indicator_config[selected_indicator]['interval'] = selected_interval.lower()
             if selected_indicator == 'fear_greed':
                 st.caption("Calculated from OHLCV data (needs 252+ bars). Components: Momentum, RSI, Volatility, Volume Breadth.")
+            elif selected_indicator == 'volume':
+                st.caption("Buy when the 20-day average volume ≥ Min Volume. Sell when below. Adjust Min Volume to filter for liquid stocks.")
             elif selected_indicator == 'week52_high':
                 st.caption("Buy when price is at or above the 52-week high (new high breakout). Sell when price is below the 52-week high.")
 
@@ -310,11 +312,15 @@ if included_indicators:
                     )
                     indicator_config[selected_indicator]['parameters'][param_key] = new_value
                 elif isinstance(param_value, float):
+                    # Use large step for volume threshold, small step for everything else
+                    _step = 100000.0 if param_key == 'min_volume' else 0.1
+                    _min  = 0.0      if param_key == 'min_volume' else 0.1
                     new_value = st.number_input(
                         param_key.replace('_', ' ').title(),
-                        min_value=0.1,
+                        min_value=_min,
                         value=float(param_value),
-                        step=0.1,
+                        step=_step,
+                        format='%.0f' if param_key == 'min_volume' else '%.2f',
                         key=f"{selected_indicator}_{param_key}"
                     )
                     indicator_config[selected_indicator]['parameters'][param_key] = new_value
@@ -358,6 +364,8 @@ if included_indicators:
                 _buy_label, _sell_label = "Price < Lower Band Score", "Price > Upper Band Score"
             elif selected_indicator == "macd":
                 _buy_label, _sell_label = "MACD > Signal Score", "MACD < Signal Score"
+            elif selected_indicator == "volume":
+                _buy_label, _sell_label = "Volume ≥ Min Volume Score", "Volume < Min Volume Score"
             elif selected_indicator == "week52_high":
                 _buy_label, _sell_label = "Price ≥ 52-Week High Score", "Price < 52-Week High Score"
             else:
