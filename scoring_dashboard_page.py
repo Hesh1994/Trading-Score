@@ -185,42 +185,49 @@ else:
                 _filled = sum(1 for v in _smap.values() if v)
                 st.sidebar.caption(f"Sectors: {_filled:,} / {len(_smap):,} classified")
 
-            # ── Sector filter ──────────────────────────────────────────────
+            # ── Sector filter (multiselect) ────────────────────────────────
             _smap          = st.session_state.get(_sck, {})
             _avail_sectors = sorted({v for v in _smap.values() if v})
-            _sec_choice    = st.sidebar.selectbox(
-                "🏭 Filter by Sector", ["ALL"] + _avail_sectors, key="ta_sector_filter"
+            _sec_choice    = st.sidebar.multiselect(
+                "🏭 Filter by Sector",
+                options=_avail_sectors,
+                key="ta_sector_filter",
+                placeholder="All sectors (no filter)",
             )
             _tickers_in_sec = (
-                _tickers if (_sec_choice == "ALL" or not _smap)
-                else [(s, n) for s, n in _tickers if _smap.get(s, "") == _sec_choice]
+                _tickers if (not _sec_choice or not _smap)
+                else [(s, n) for s, n in _tickers if _smap.get(s, "") in set(_sec_choice)]
             )
 
-            # ── Ticker dropdown ────────────────────────────────────────────
-            _tick_opts = ["-- select --", "✅ Select All"] + \
-                         [f"{s}  —  {n}" for s, n in _tickers_in_sec[:500]]
-            _chosen = st.sidebar.selectbox(
+            # ── Ticker multiselect (searchable checkbox list) ──────────────
+            _tick_opts = [f"{s}  —  {n}" for s, n in _tickers_in_sec[:1000]]
+            _chosen_labels = st.sidebar.multiselect(
                 f"Select ticker ({len(_tickers_in_sec):,} available)",
-                _tick_opts, key="ta_ticker_select"
+                options=_tick_opts,
+                key="ta_ticker_select",
+                placeholder="Search and select tickers…",
             )
-            if _chosen == "✅ Select All":
-                if st.sidebar.button("➕ Add All to List", key="ta_add_all_btn",
-                                      use_container_width=True):
-                    _added = sum(
-                        1 for _s, _ in _tickers_in_sec
-                        if _s not in st.session_state['ta_ticker_list']
-                        and not st.session_state['ta_ticker_list'].append(_s)
-                    )
-                    st.sidebar.success(f"Added {_added} ticker(s)")
-            elif _chosen != "-- select --":
-                _csym = _chosen.split("  —  ")[0].strip()
-                if st.sidebar.button("➕ Add to List", key="ta_add_btn",
-                                      use_container_width=True):
-                    if _csym not in st.session_state['ta_ticker_list']:
-                        st.session_state['ta_ticker_list'].append(_csym)
-                        st.sidebar.success(f"Added **{_csym}**")
-                    else:
-                        st.sidebar.info(f"**{_csym}** already in list")
+            _b1, _b2 = st.sidebar.columns(2)
+            if _b1.button("➕ Add Selected", key="ta_add_btn",
+                          use_container_width=True, disabled=not _chosen_labels):
+                _before = len(st.session_state['ta_ticker_list'])
+                for _lbl in _chosen_labels:
+                    _sym = _lbl.split("  —  ")[0].strip()
+                    if _sym not in st.session_state['ta_ticker_list']:
+                        st.session_state['ta_ticker_list'].append(_sym)
+                _added = len(st.session_state['ta_ticker_list']) - _before
+                st.session_state.pop("ta_ticker_select", None)
+                st.sidebar.success(f"Added {_added} ticker(s)")
+                st.rerun()
+            if _b2.button("➕ Add All", key="ta_add_all_btn",
+                          use_container_width=True):
+                _before = len(st.session_state['ta_ticker_list'])
+                for _s, _ in _tickers_in_sec:
+                    if _s not in st.session_state['ta_ticker_list']:
+                        st.session_state['ta_ticker_list'].append(_s)
+                _added = len(st.session_state['ta_ticker_list']) - _before
+                st.sidebar.success(f"Added {_added} ticker(s)")
+                st.rerun()
         else:
             st.sidebar.caption("Click **Load Tickers** to browse listed stocks.")
 
