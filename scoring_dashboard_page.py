@@ -35,23 +35,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# ── Password gate ─────────────────────────────────────────────────────────────
-def _check_password():
-    if st.session_state.get("_auth_ok"):
-        return True
-    st.markdown("## 🔒 Stock Scoring System")
-    pw = st.text_input("Password", type="password", key="_pw_input")
-    if pw:
-        if pw == st.secrets.get("dashboard_password", ""):
-            st.session_state["_auth_ok"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
-
-if not _check_password():
-    st.stop()
-# ─────────────────────────────────────────────────────────────────────────────
 
 _title_col, _btn_col = st.columns([4, 1])
 with _title_col:
