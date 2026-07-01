@@ -99,39 +99,43 @@ if not _fmp_module_ok:
 elif not fmp_key:
     st.sidebar.caption("⬆️ Enter an FMP API key above to use the Exchange Lookup.")
 else:
-    # ── Country ───────────────────────────────────────────────────────────
-    _ALL_COUNTRIES = "🌍 ALL Countries"
-    _country_opts  = ["-- Select country --", _ALL_COUNTRIES] + sorted(COUNTRY_EXCHANGES.keys())
-    _sel_country   = st.sidebar.selectbox("Country", _country_opts, key="ta_country")
+    # ── Country (multiselect with search) ────────────────────────────────
+    _sel_countries = st.sidebar.multiselect(
+        "Country",
+        options=sorted(COUNTRY_EXCHANGES.keys()),
+        key="ta_country",
+        placeholder="Search and select countries…",
+    )
 
     _sel_exc_codes = []
     _sel_exc_label = None
-    _sel_exc_code  = None
 
-    if _sel_country == _ALL_COUNTRIES:
-        _sel_exc_codes = ["__ALL__"]
-        _sel_exc_label = "All Countries / All Exchanges"
-        st.sidebar.caption("Full global stock list (~90k tickers).")
+    if _sel_countries:
+        # Build combined exchange list for all selected countries
+        _all_exc_pairs = []
+        for _c in _sel_countries:
+            _all_exc_pairs.extend(COUNTRY_EXCHANGES[_c])
 
-    elif _sel_country != "-- Select country --":
-        _exc_list   = COUNTRY_EXCHANGES[_sel_country]
-        _exc_labels = [lbl for _, lbl in _exc_list]
-        _all_lbl    = f"ALL ({len(_exc_list)} exchanges)"
-        _sel_exc_label = st.sidebar.selectbox(
-            "Exchange", [_all_lbl] + _exc_labels, key="ta_exchange"
+        # ── Exchange (multiselect with search) ────────────────────────────
+        _exc_label_to_code = {lbl: code for code, lbl in _all_exc_pairs}
+        _sel_exc_labels = st.sidebar.multiselect(
+            "Exchange",
+            options=list(_exc_label_to_code.keys()),
+            key="ta_exchange",
+            placeholder="All exchanges (leave empty for all)…",
         )
-        if _sel_exc_label == _all_lbl:
-            _sel_exc_codes = [c for c, _ in _exc_list]
+        if _sel_exc_labels:
+            _sel_exc_codes = [_exc_label_to_code[l] for l in _sel_exc_labels]
+            _sel_exc_label = ", ".join(_sel_exc_labels)
         else:
-            _sel_exc_code  = next(c for c, l in _exc_list if l == _sel_exc_label)
-            _sel_exc_codes = [_sel_exc_code]
-            _sfx = EXCHANGE_SUFFIX.get(_sel_exc_code, "")
-            st.sidebar.caption(f"Ticker suffix: `{_sfx if _sfx else '(none)'}`")
+            # No exchange selected → use all exchanges for selected countries
+            _sel_exc_codes = [code for code, _ in _all_exc_pairs]
+            _sel_exc_label = f"All exchanges ({len(_sel_exc_codes)} selected)"
 
     # ── Load Tickers ──────────────────────────────────────────────────────
     st.sidebar.markdown("**📋 Load Exchange Tickers**")
     if not _sel_exc_codes:
-        st.sidebar.caption("⬆️ Select a country and exchange above first.")
+        st.sidebar.caption("⬆️ Select a country above first.")
     else:
         _ck      = f"ta_tickers_{'_'.join(sorted(_sel_exc_codes))}"
         _sck     = f"ta_sectors_{'_'.join(sorted(_sel_exc_codes))}"
