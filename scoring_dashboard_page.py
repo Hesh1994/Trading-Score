@@ -53,14 +53,14 @@ st.sidebar.header("⚙️ Configuration")
 # ── FMP API Key — persistent key manager ─────────────────────────────────
 _KEY_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_fmp_key")
 
-# Load saved key once per session
+# Load saved key from file once per session into the persistent (non-widget) key
 if 'fmp_key_loaded' not in st.session_state:
     try:
         if os.path.exists(_KEY_FILE):
             with open(_KEY_FILE) as _kf:
                 _saved_key = json.load(_kf).get('key', '')
             if _saved_key:
-                st.session_state['shared_fmp_key'] = _saved_key
+                st.session_state['fmp_key_value'] = _saved_key
     except Exception:
         pass
     st.session_state['fmp_key_loaded'] = True
@@ -71,9 +71,14 @@ fmp_key = st.sidebar.text_input(
     "FMP API Key",
     type="default" if _show_key else "password",
     placeholder="Enter once — used by all pages",
+    value=st.session_state.get('fmp_key_value', ''),
     key="shared_fmp_key",
     help="Get a free key at financialmodelingprep.com — used for Exchange Lookup and CANSLIM data.",
 )
+
+# Sync widget value → persistent non-widget key (survives page navigation)
+if fmp_key:
+    st.session_state['fmp_key_value'] = fmp_key
 
 if fmp_key:
     _is_saved = os.path.exists(_KEY_FILE)
@@ -87,7 +92,8 @@ if fmp_key:
         except Exception as _e:
             st.sidebar.error(f"Could not save: {_e}")
     if _kb2.button("🗑️ Remove key", key="fmp_remove_btn", use_container_width=True):
-        st.session_state['shared_fmp_key'] = ''
+        st.session_state.pop('fmp_key_value', None)
+        st.session_state.pop('shared_fmp_key', None)
         try:
             os.remove(_KEY_FILE)
         except Exception:

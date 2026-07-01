@@ -4,7 +4,7 @@ Scores any number of companies on the CANSLIM fundamentals methodology
 and presents a ranked table with per-ticker drill-down.
 """
 
-import sys, os
+import sys, os, json
 _root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 if _root not in sys.path:
     sys.path.insert(0, _root)
@@ -62,8 +62,21 @@ def _fmt_criterion(label, val):
 
 st.sidebar.header("⚙️ CANSLIM Configuration")
 
-# FMP key is entered once on the Technical Analysis Scoring page (sidebar)
-fmp_key = st.session_state.get('shared_fmp_key', '')
+# Load saved key from file if not already in session (user landed here first)
+_KEY_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_fmp_key")
+if 'fmp_key_loaded' not in st.session_state:
+    try:
+        if os.path.exists(_KEY_FILE):
+            with open(_KEY_FILE) as _kf:
+                _saved = json.load(_kf).get('key', '')
+            if _saved:
+                st.session_state['fmp_key_value'] = _saved
+    except Exception:
+        pass
+    st.session_state['fmp_key_loaded'] = True
+
+# Read from persistent non-widget key so it survives page navigation
+fmp_key = st.session_state.get('fmp_key_value', '')
 if fmp_key:
     st.sidebar.success("🔑 FMP key active")
 else:
