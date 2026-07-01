@@ -412,25 +412,31 @@ st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 
 # ── Model Weights ─────────────────────────────────────────────────────────────
 st.sidebar.subheader("⚖️ Model Weights")
-st.sidebar.caption("Set the weight for each score type. Final Score = weighted average.")
 _fg_active = indicator_config.get('fear_greed', {}).get('enabled', False)
 
-_w_tech = st.sidebar.number_input(
-    "Total Technical Score", min_value=0.0, value=1.0, step=0.5, key="w_tech",
-    help="Weight applied to the Total Technical Score (0 = exclude)"
+_w_tech = st.sidebar.slider(
+    "Total Technical Score %", min_value=0, max_value=100, value=100, step=5, key="w_tech"
 )
-_w_fg = 0.0
+_w_fg = 0
 if _fg_active:
-    _w_fg = st.sidebar.number_input(
-        "Fear & Greed", min_value=0.0, value=1.0, step=0.5, key="w_fg",
-        help="Weight applied to the Fear & Greed score (0 = exclude)"
+    _w_fg = st.sidebar.slider(
+        "Fear & Greed %", min_value=0, max_value=100, value=100, step=5, key="w_fg"
     )
-_w_canslim = 0.0
+_w_canslim = 0
 if _canslim_enabled:
-    _w_canslim = st.sidebar.number_input(
-        "CANSLIM", min_value=0.0, value=1.0, step=0.5, key="w_canslim",
-        help="Weight applied to the CANSLIM score (0 = exclude)"
+    _w_canslim = st.sidebar.slider(
+        "CANSLIM %", min_value=0, max_value=100, value=100, step=5, key="w_canslim"
     )
+
+_total_w = _w_tech + _w_fg + _w_canslim
+if _total_w > 0:
+    _eff_tech    = round(_w_tech    / _total_w * 100)
+    _eff_fg      = round(_w_fg      / _total_w * 100)
+    _eff_canslim = round(_w_canslim / _total_w * 100)
+    _eff_parts = [f"Tech {_eff_tech}%"]
+    if _fg_active:      _eff_parts.append(f"F&G {_eff_fg}%")
+    if _canslim_enabled: _eff_parts.append(f"CANSLIM {_eff_canslim}%")
+    st.sidebar.caption("Effective: " + " · ".join(_eff_parts))
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
