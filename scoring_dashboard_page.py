@@ -442,14 +442,23 @@ if st.session_state['ta_ticker_list']:
     _show_5d       = st.session_state.get('show_5d_tech', False)
     _show_5d_fg    = st.session_state.get('show_5d_fg', False)
 
-    # ── Sidebar: per-ticker show/hide checkboxes (all checked by default) ─────
-    st.sidebar.markdown("**Select Tickers to Show**")
-    _visible_tickers = [
-        t for t in _tickers
-        if st.sidebar.checkbox(t, value=True, key=f"show_chk_{t}")
-    ]
+    # ── Sidebar: ticker visibility multiselect (searchable checkbox dropdown) ───
+    _vis_key = "visible_tickers_ms"
+    if _vis_key not in st.session_state:
+        st.session_state[_vis_key] = list(_tickers)
+    else:
+        # Keep previously visible tickers still in the list; auto-show new ones
+        _prev = set(st.session_state[_vis_key])
+        _new  = [t for t in _tickers if t not in _prev]
+        st.session_state[_vis_key] = [t for t in _tickers if t in _prev] + _new
+
+    _visible_tickers = st.sidebar.multiselect(
+        "Select Tickers to Show",
+        options=_tickers,
+        key=_vis_key,
+    )
     if not _visible_tickers:
-        _visible_tickers = _tickers   # guard: show all if nothing is checked
+        _visible_tickers = list(_tickers)   # guard: show all if nothing selected
 
     # Format stored ISO dates as "28 Jun"
     _raw_dates = st.session_state.get('ta_history_dates', [])
