@@ -415,28 +415,27 @@ st.sidebar.subheader("⚖️ Model Weights")
 _fg_active = indicator_config.get('fear_greed', {}).get('enabled', False)
 
 _w_tech = st.sidebar.number_input(
-    "Total Technical Score %", min_value=0, max_value=100, value=100, step=5, key="w_tech"
+    "Total Technical Score %", min_value=0, max_value=100, value=50, step=5, key="w_tech"
 )
 _w_fg = 0
 if _fg_active:
     _w_fg = st.sidebar.number_input(
-        "Fear & Greed %", min_value=0, max_value=100, value=100, step=5, key="w_fg"
+        "Fear & Greed %", min_value=0, max_value=100, value=25, step=5, key="w_fg"
     )
 _w_canslim = 0
 if _canslim_enabled:
     _w_canslim = st.sidebar.number_input(
-        "CANSLIM %", min_value=0, max_value=100, value=100, step=5, key="w_canslim"
+        "CANSLIM %", min_value=0, max_value=100, value=25, step=5, key="w_canslim"
     )
 
 _total_w = _w_tech + _w_fg + _w_canslim
-if _total_w > 0:
-    _eff_tech    = round(_w_tech    / _total_w * 100)
-    _eff_fg      = round(_w_fg      / _total_w * 100)
-    _eff_canslim = round(_w_canslim / _total_w * 100)
-    _eff_parts = [f"Tech {_eff_tech}%"]
-    if _fg_active:      _eff_parts.append(f"F&G {_eff_fg}%")
-    if _canslim_enabled: _eff_parts.append(f"CANSLIM {_eff_canslim}%")
-    st.sidebar.caption("Effective: " + " · ".join(_eff_parts))
+_total_label = f"Total: {_total_w}%"
+if _total_w == 100:
+    st.sidebar.success(_total_label)
+elif _total_w > 100:
+    st.sidebar.error(_total_label + " — exceeds 100%")
+else:
+    st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
