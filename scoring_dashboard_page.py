@@ -359,7 +359,7 @@ if included_indicators:
             elif selected_indicator == "macd":
                 _buy_label, _sell_label = "MACD > Signal Score", "MACD < Signal Score"
             elif selected_indicator == "week52_high":
-                _buy_label, _sell_label = "Near 52W High Score", "Far from 52W High Score"
+                _buy_label, _sell_label = "Price ≥ 52-Week High Score", "Price < 52-Week High Score"
             else:
                 _buy_label, _sell_label = "Buy Score", "Sell Score"
             col1, col2 = st.columns(2)
