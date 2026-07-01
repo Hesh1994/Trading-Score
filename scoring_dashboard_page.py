@@ -291,6 +291,8 @@ if included_indicators:
             indicator_config[selected_indicator]['interval'] = selected_interval.lower()
             if selected_indicator == 'fear_greed':
                 st.caption("Calculated from OHLCV data (needs 252+ bars). Components: Momentum, RSI, Volatility, Volume Breadth.")
+            elif selected_indicator == 'week52_high':
+                st.caption("Buy when price is within Buy % of the 52-week high. Sell when price is more than Sell % below the 52-week high.")
 
             # Parameters
             st.write("Parameters:")
@@ -356,6 +358,8 @@ if included_indicators:
                 _buy_label, _sell_label = "Price < Lower Band Score", "Price > Upper Band Score"
             elif selected_indicator == "macd":
                 _buy_label, _sell_label = "MACD > Signal Score", "MACD < Signal Score"
+            elif selected_indicator == "week52_high":
+                _buy_label, _sell_label = "Near 52W High Score", "Far from 52W High Score"
             else:
                 _buy_label, _sell_label = "Buy Score", "Sell Score"
             col1, col2 = st.columns(2)

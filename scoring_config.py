@@ -174,6 +174,18 @@ INDICATORS_CONFIG = {
         'sell_score': 1.5,
     },
 
+    'week52_high': {
+        'enabled': True,
+        'label': '52-Week High',
+        'interval': 'daily',
+        'parameters': {
+            'buy_pct': 5.0,    # Buy when price is within this % of the 52-week high
+            'sell_pct': 20.0,  # Sell when price is more than this % below the 52-week high
+        },
+        'buy_score': 1.0,
+        'sell_score': 1.0,
+    },
+
     'fear_greed': {
         'enabled': False,
         'label': 'Fear & Greed Index',
