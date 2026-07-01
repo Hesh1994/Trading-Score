@@ -410,6 +410,43 @@ if included_indicators:
 # ── Persist the updated config for the next rerun ─────────────────────────────
 st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 
+# ── Model Weights ─────────────────────────────────────────────────────────────
+st.sidebar.subheader("⚖️ Model Weights")
+st.sidebar.caption("Set the weight for each score type. Final Score = weighted average.")
+_fg_active = indicator_config.get('fear_greed', {}).get('enabled', False)
+
+_w_tech = st.sidebar.number_input(
+    "Total Technical Score", min_value=0.0, value=1.0, step=0.5, key="w_tech",
+    help="Weight applied to the Total Technical Score (0 = exclude)"
+)
+_w_fg = 0.0
+if _fg_active:
+    _w_fg = st.sidebar.number_input(
+        "Fear & Greed", min_value=0.0, value=1.0, step=0.5, key="w_fg",
+        help="Weight applied to the Fear & Greed score (0 = exclude)"
+    )
+_w_canslim = 0.0
+if _canslim_enabled:
+    _w_canslim = st.sidebar.number_input(
+        "CANSLIM", min_value=0.0, value=1.0, step=0.5, key="w_canslim",
+        help="Weight applied to the CANSLIM score (0 = exclude)"
+    )
+
+def _final_score(ticker, scores, fg_scores, canslim_scores):
+    _ws, _wt = 0.0, 0.0
+    _ts = scores.get(ticker)
+    if _ts is not None and _w_tech > 0:
+        _ws += _ts * _w_tech;  _wt += _w_tech
+    if _fg_active and _w_fg > 0:
+        _fg = fg_scores.get(ticker)
+        if _fg is not None:
+            _ws += _fg * _w_fg;  _wt += _w_fg
+    if _canslim_enabled and _w_canslim > 0:
+        _cs = canslim_scores.get(ticker)
+        if _cs is not None:
+            _ws += _cs * _w_canslim;  _wt += _w_canslim
+    return round(_ws / _wt, 1) if _wt > 0 else None
+
 # ── FMP price endpoint test ───────────────────────────────────────────────
 if fmp_key and _fmp_module_ok:
     with st.sidebar.expander("🔧 Test FMP Price Endpoint"):
@@ -560,6 +597,13 @@ if st.session_state['ta_ticker_list']:
                 for t in _visible_tickers
             ]
 
+        _mi_tuples.append(('', 'Final Score'))
+        _mi_data[('', 'Final Score')] = [
+            f"{_final_score(t, _scores, _fg_scores, _canslim_scores):.1f}%"
+            if _final_score(t, _scores, _fg_scores, _canslim_scores) is not None else ''
+            for t in _visible_tickers
+        ]
+
         _mi_df = pd.DataFrame(_mi_data)
         _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
         st.dataframe(_mi_df, use_container_width=True, hide_index=True)
@@ -580,12 +624,16 @@ if st.session_state['ta_ticker_list']:
         }
         if _canslim_enabled:
             _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _visible_tickers]
+        _tbl_data['Final Score'] = [
+            _final_score(t, _scores, _fg_scores, _canslim_scores) for t in _visible_tickers
+        ]
         _col_cfg = {
             'Remove':                st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker':                st.column_config.TextColumn('Ticker', disabled=True),
             'Total Technical Score': st.column_config.NumberColumn('Total Technical Score (%)', disabled=True, format='%.1f%%'),
             'Fear & Greed':          st.column_config.NumberColumn('Fear & Greed', disabled=True, format='%.1f%%'),
             'CANSLIM Score':         st.column_config.NumberColumn('CANSLIM Score', disabled=True, format='%.1f%%'),
+            'Final Score':           st.column_config.NumberColumn('Final Score (%)', disabled=True, format='%.1f%%'),
         }
         _edited = st.data_editor(
             pd.DataFrame(_tbl_data), use_container_width=True,
