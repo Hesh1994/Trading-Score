@@ -292,7 +292,7 @@ if included_indicators:
             if selected_indicator == 'fear_greed':
                 st.caption("Calculated from OHLCV data (needs 252+ bars). Components: Momentum, RSI, Volatility, Volume Breadth.")
             elif selected_indicator == 'week52_high':
-                st.caption("Buy when price is within Buy % of the 52-week high. Sell when price is more than Sell % below the 52-week high.")
+                st.caption("Buy when price is at or above the 52-week high (new high breakout). Sell when price is below the 52-week high.")
 
             # Parameters
             st.write("Parameters:")

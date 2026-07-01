@@ -270,14 +270,13 @@ def calculate_52_week_high(df, window=252):
     return df['high'].rolling(window=window, min_periods=30).max()
 
 
-def evaluate_52_week_high_criteria(price, high_52w, buy_pct, sell_pct):
-    """Buy when price is within buy_pct% of 52-week high; sell when more than sell_pct% below."""
+def evaluate_52_week_high_criteria(price, high_52w):
+    """Buy when price >= 52-week high (new high); sell when price < 52-week high."""
     buy_triggered = False
     sell_triggered = False
     if pd.notna(price) and pd.notna(high_52w) and high_52w > 0:
-        pct_from_high = (high_52w - price) / high_52w * 100
-        buy_triggered  = pct_from_high <= buy_pct
-        sell_triggered = pct_from_high >= sell_pct
+        buy_triggered  = price >= high_52w
+        sell_triggered = price < high_52w
     return buy_triggered, sell_triggered
 
 
@@ -579,18 +578,11 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
                 high_52w = calculate_52_week_high(df)
                 high_52w_current = high_52w.iloc[-1]
                 latest_close = df.iloc[-1]['close']
-                buy_pct  = config['week52_high']['parameters'].get('buy_pct',  5.0)
-                sell_pct = config['week52_high']['parameters'].get('sell_pct', 20.0)
                 buy_trig, sell_trig = evaluate_52_week_high_criteria(
-                    latest_close, high_52w_current, buy_pct, sell_pct
-                )
-                pct_from_high = (
-                    round((high_52w_current - latest_close) / high_52w_current * 100, 2)
-                    if pd.notna(high_52w_current) and high_52w_current > 0 else None
+                    latest_close, high_52w_current
                 )
                 result['signals']['week52_high'] = {
-                    'high_52w':     round(high_52w_current, 2) if pd.notna(high_52w_current) else None,
-                    'pct_from_high': pct_from_high,
+                    'high_52w': round(high_52w_current, 2) if pd.notna(high_52w_current) else None,
                     'buy': buy_trig, 'sell': sell_trig,
                 }
                 if buy_trig:  result['buy_score']  += config['week52_high']['buy_score']
