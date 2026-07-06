@@ -4,6 +4,7 @@ Fetches fundamental data via yfinance and scores each ticker on the
 10-criterion CANSLIM methodology (maximum 100 points).
 """
 
+import time
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -320,11 +321,22 @@ def fetch_canslim_data(symbol):
 
     # ── Institutional ownership ───────────────────────────────────────────
     try:
-        info = t.info or {}
-        pct = info.get('institutionPercentHeld') or info.get('heldPercentInstitutions')
+        _inst_info = None
+        for _attempt in range(3):
+            try:
+                _inst_info = t.info or {}
+                break
+            except Exception as _e:
+                if 'Too Many Requests' in str(_e) or '429' in str(_e):
+                    time.sleep(3 * (2 ** _attempt))   # 3 s, 6 s, 12 s
+                else:
+                    raise
+        if _inst_info is None:
+            raise RuntimeError('rate-limited after 3 retries')
+        pct = _inst_info.get('institutionPercentHeld') or _inst_info.get('heldPercentInstitutions')
         if pct is not None:
             pct = float(pct)
-            data['inst_pct'] = pct / 100 if pct > 1 else pct   # normalise if in percent
+            data['inst_pct'] = pct / 100 if pct > 1 else pct
         else:
             data['inst_pct'] = None
             data['errors'].append('institutional ownership unavailable')
@@ -742,8 +754,19 @@ def fetch_canslim_data_fmp(symbol, api_key):
     # ── Institutional ownership — yfinance fallback ───────────────────────
     # FMP stable API has no institutional-holder endpoint
     try:
-        info = yf.Ticker(sym).info or {}
-        pct = info.get('institutionPercentHeld') or info.get('heldPercentInstitutions')
+        _inst_info = None
+        for _attempt in range(3):
+            try:
+                _inst_info = yf.Ticker(sym).info or {}
+                break
+            except Exception as _e:
+                if 'Too Many Requests' in str(_e) or '429' in str(_e):
+                    time.sleep(3 * (2 ** _attempt))   # 3 s, 6 s, 12 s
+                else:
+                    raise
+        if _inst_info is None:
+            raise RuntimeError('rate-limited after 3 retries')
+        pct = _inst_info.get('institutionPercentHeld') or _inst_info.get('heldPercentInstitutions')
         if pct is not None:
             pct = float(pct)
             data['inst_pct'] = pct / 100 if pct > 1 else pct
@@ -792,10 +815,12 @@ def score_canslim_universe(symbols, fmp_api_key=None):
     Returns list of result dicts sorted by score descending.
     """
     results = []
-    for sym in symbols:
+    for i, sym in enumerate(symbols):
         sym = _normalize_ticker(sym.strip().upper(), fmp_api_key)
         if not sym:
             continue
+        if i > 0:
+            time.sleep(0.5)   # brief pause between tickers to avoid yfinance rate limits
         try:
             if fmp_api_key:
                 raw = fetch_canslim_data_fmp(sym, fmp_api_key)
