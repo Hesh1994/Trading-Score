@@ -540,6 +540,9 @@ with _btn_col:
             st.session_state['ta_ticker_list'].append(_s)
             st.rerun()
 
+# Placeholder for loading spinner — positioned above the table so it appears above it
+_status_ph = st.empty()
+
 # ── Editable table with remove checkboxes + score columns ────────────────────
 if st.session_state['ta_ticker_list']:
     _scores        = st.session_state.get('ta_scores', {})
@@ -715,6 +718,7 @@ if _run_btn_header:
     _use_fmp = bool(fmp_key and _fmp_module_ok)
     _source_label = "FMP API" if _use_fmp else "yfinance"
 
+    _status_ph.info(f"⏳ Downloading price data via {_source_label}…")
     with st.spinner(f"📥 Downloading price data via {_source_label}…"):
         try:
             # Collect unique intervals needed by enabled indicators
@@ -793,6 +797,7 @@ if _run_btn_header:
             st.error(f"Error downloading data: {str(e)}")
             st.stop()
 
+    _status_ph.info("⏳ Scoring stocks…")
     with st.spinner("🔧 Scoring stocks..."):
         try:
             # Prepare global config
@@ -889,7 +894,7 @@ if _run_btn_header:
             st.warning("⚠️ CANSLIM scores not loaded — please run the **CANSLIM Dashboard** first, then re-run analysis here.")
 
     # ========== DISPLAY RESULTS ==========
-    st.success("✅ Scoring complete!")
+    _status_ph.success("✅ Scoring complete!")
 
     # Fear & Greed summary across all tickers (per-ticker calculation)
     if indicator_config.get('fear_greed', {}).get('enabled'):
