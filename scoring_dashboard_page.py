@@ -589,8 +589,8 @@ if st.session_state['ta_ticker_list']:
     if not _day_labels:
         _day_labels = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
 
-    # ── Two toggle buttons side by side ──────────────────────────────────────
-    _b1, _b2, _ = st.columns([2, 2, 2])
+    # ── Toggle buttons + Clear all ───────────────────────────────────────────
+    _b1, _b2, _b3 = st.columns([2, 2, 2])
     with _b1:
         if st.button(
             "Collapse 5D ▲" if _show_5d else "Extend Technical Score to 5D ▼",
@@ -606,6 +606,10 @@ if st.session_state['ta_ticker_list']:
             help="Show / hide 5-day Fear & Greed evolution",
         ):
             st.session_state['show_5d_fg'] = not _show_5d_fg
+            st.rerun()
+    with _b3:
+        if st.button("🗑️ Clear all", key="ta_main_clear_top", use_container_width=True):
+            st.session_state['ta_ticker_list'] = []
             st.rerun()
 
     _n_tts = 5 if (_show_5d    and _scores_history) else 0
@@ -665,11 +669,7 @@ if st.session_state['ta_ticker_list']:
         _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
         st.dataframe(_mi_df, use_container_width=True, hide_index=True)
 
-        _rc1, _rc2 = st.columns([3, 1])
-        _rc1.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
-        if _rc2.button("🗑️ Clear all", key="ta_main_clear_5d"):
-            st.session_state['ta_ticker_list'] = []
-            st.rerun()
+        st.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
 
     else:
         # ── Normal view: data_editor with Remove checkboxes ───────────────────────
@@ -702,11 +702,7 @@ if st.session_state['ta_ticker_list']:
             st.session_state['ta_ticker_list'] = [t for t in _tickers if t not in _removed]
             st.rerun()
 
-        _c1, _c2 = st.columns([3, 1])
-        _c1.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
-        if _c2.button("🗑️ Clear all", key="ta_main_clear"):
-            st.session_state['ta_ticker_list'] = []
-            st.rerun()
+        st.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
 else:
     st.info("No tickers selected yet. Use the sidebar Ticker Finder or type a symbol above.")
 
