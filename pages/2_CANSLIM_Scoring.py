@@ -31,12 +31,16 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📈 CANSLIM Multi-Ticker Scoring & Ranking")
-st.caption(
-    "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
-    "Data via FMP API — needs at least 8 quarters / 6 years of history."
-)
-st.caption("v2026-06-25i — FMP key centralised on TA dashboard")
+_title_col, _btn_col = st.columns([4, 1])
+with _title_col:
+    st.title("📈 CANSLIM Multi-Ticker Scoring & Ranking")
+    st.caption(
+        "Scores each ticker across 10 CANSLIM criteria (10 pts each, max 100). "
+        "Data via FMP API — needs at least 8 quarters / 6 years of history."
+    )
+_btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
+run_btn = _btn_col.button("🚀 Run CANSLIM Analysis", type="primary", use_container_width=True, key="run_btn_header")
+st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0; margin-bottom: 1rem;">', unsafe_allow_html=True)
 
 # ============================================================================
 # HELPERS
@@ -316,8 +320,6 @@ if fmp_key:
                 st.sidebar.warning(f"Unexpected response: {_data}")
         except Exception as _e:
             st.sidebar.error(f"Connection failed: {_e}")
-
-run_btn = st.sidebar.button("🚀 Run CANSLIM Analysis", type="primary", use_container_width=True)
 
 # ============================================================================
 # MAIN — RUN ANALYSIS
