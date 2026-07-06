@@ -962,18 +962,7 @@ if _run_btn_header:
 
     else:
         # ── Multi-indicator: original scoring table ───────────────────────────
-        col1, col2, col3, col4 = st.columns(4)
-        buy_count  = len(results_df[results_df["Signal"] == "BUY"])
-        sell_count = len(results_df[results_df["Signal"] == "SELL"])
-        hold_count = len(results_df[results_df["Signal"] == "HOLD"])
-        with col1:
-            st.metric("Total Stocks Analyzed", len(results_df))
-        with col2:
-            st.metric("Buy Signals",  buy_count,  delta_color="off")
-        with col3:
-            st.metric("Sell Signals", sell_count, delta_color="off")
-        with col4:
-            st.metric("Hold Signals", hold_count, delta_color="off")
+        st.metric("Total Stocks Analyzed", len(results_df))
 
     
     # Export to CSV
