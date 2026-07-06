@@ -763,8 +763,12 @@ def fetch_canslim_data_fmp(symbol, api_key):
             pct = float(pct)
             data['inst_pct'] = pct / 100 if pct > 1 else pct
         else:
-            data['inst_pct'] = None
-            data['errors'].append('institutional ownership unavailable via FMP')
+            data['inst_pct'] = None   # not available — silent data gap
+    except requests.exceptions.HTTPError as e:
+        # 404 = FMP doesn't cover this symbol's institutional data; treat as silent data gap
+        data['inst_pct'] = None
+        if e.response is None or e.response.status_code != 404:
+            data['errors'].append(f'institutional ownership: {e}')
     except Exception as e:
         data['inst_pct'] = None
         data['errors'].append(f'institutional ownership: {e}')
