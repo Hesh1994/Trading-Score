@@ -751,28 +751,20 @@ def fetch_canslim_data_fmp(symbol, api_key):
         data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
         data['errors'].append(f'FMP annual income: {e}')
 
-    # ── Institutional ownership — yfinance fallback ───────────────────────
-    # FMP stable API has no institutional-holder endpoint
+    # ── Institutional ownership — FMP institutional-ownership endpoint ────
     try:
-        _inst_info = None
-        for _attempt in range(3):
-            try:
-                _inst_info = yf.Ticker(sym).info or {}
-                break
-            except Exception as _e:
-                if 'Too Many Requests' in str(_e) or '429' in str(_e):
-                    time.sleep(3 * (2 ** _attempt))   # 3 s, 6 s, 12 s
-                else:
-                    raise
-        if _inst_info is None:
-            raise RuntimeError('rate-limited after 3 retries')
-        pct = _inst_info.get('institutionPercentHeld') or _inst_info.get('heldPercentInstitutions')
+        inst_data = _fmp_get("institutional-ownership", api_key, {'symbol': sym})
+        pct = None
+        if inst_data and isinstance(inst_data, list):
+            pct = inst_data[0].get('ownershipPercent')
+        elif inst_data and isinstance(inst_data, dict):
+            pct = inst_data.get('ownershipPercent')
         if pct is not None:
             pct = float(pct)
             data['inst_pct'] = pct / 100 if pct > 1 else pct
         else:
             data['inst_pct'] = None
-            data['errors'].append('institutional ownership unavailable')
+            data['errors'].append('institutional ownership unavailable via FMP')
     except Exception as e:
         data['inst_pct'] = None
         data['errors'].append(f'institutional ownership: {e}')
