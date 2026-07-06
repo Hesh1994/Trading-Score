@@ -195,6 +195,20 @@ INDICATORS_CONFIG = {
         'sell_score': 1.0,
     },
 
+    'cup_handle': {
+        'enabled': True,
+        'label': 'Cup & Handle Pattern',
+        'interval': 'daily',
+        'parameters': {
+            'window':     120,   # bars to look back (~6 months)
+            'depth_min':  0.10,  # cup must drop at least 10%
+            'depth_max':  0.50,  # cup must not drop more than 50%
+            'handle_max': 0.15,  # handle retracement ≤ 15%
+        },
+        'buy_score': 1.5,
+        'sell_score': 0.0,
+    },
+
     'fear_greed': {
         'enabled': False,
         'label': 'Fear & Greed Index',

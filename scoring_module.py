@@ -292,6 +292,69 @@ def evaluate_52_week_high_criteria(price, high_52w):
     return buy_triggered, sell_triggered
 
 
+def detect_cup_and_handle(df, window=120, depth_min=0.10, depth_max=0.50, handle_max=0.15):
+    """
+    Detect a Cup & Handle pattern in the last `window` bars.
+    Returns True (pattern complete / breakout) or False.
+
+    Logic:
+      - Split the window into: cup-search zone (first 80%) and handle zone (last 20%).
+      - Left rim  = highest close in the first 40% of the window.
+      - Cup bottom = lowest close between left rim and mid-point.
+      - Right rim  = highest close after cup bottom, within the cup-search zone.
+      - Cup depth must be between depth_min and depth_max of the left-rim price.
+      - Right rim must recover to ≥ 90% of the left rim (U-shape, not V-shape).
+      - Handle: after the right rim, price dips but not more than handle_max (15%).
+      - Pattern is *complete* when the latest close breaks above the right-rim level.
+    """
+    if len(df) < max(window, 30):
+        return False
+    closes = df['close'].iloc[-window:].values
+    n = len(closes)
+    cup_end   = int(n * 0.80)
+    left_zone = int(n * 0.40)
+
+    # Left rim
+    left_rim_i = int(np.argmax(closes[:left_zone]))
+    left_rim   = closes[left_rim_i]
+
+    # Cup bottom — lowest point after left rim, within cup zone
+    search = closes[left_rim_i:cup_end]
+    if len(search) < 5:
+        return False
+    bot_i  = int(np.argmin(search)) + left_rim_i
+    bottom = closes[bot_i]
+
+    # Cup depth check
+    depth = (left_rim - bottom) / left_rim if left_rim > 0 else 0
+    if depth < depth_min or depth > depth_max:
+        return False
+
+    # Right rim — highest point after the bottom, still in cup zone
+    right_search = closes[bot_i:cup_end]
+    if len(right_search) < 3:
+        return False
+    right_rim_i = int(np.argmax(right_search)) + bot_i
+    right_rim   = closes[right_rim_i]
+
+    # Right rim must recover to ≥ 90% of left rim
+    if right_rim < left_rim * 0.90:
+        return False
+
+    # Handle — section after right rim
+    handle_section = closes[right_rim_i:]
+    if len(handle_section) < 2:
+        return False
+    handle_low  = float(np.min(handle_section))
+    handle_pull = (right_rim - handle_low) / right_rim if right_rim > 0 else 1
+    if handle_pull > handle_max:
+        return False
+
+    # Breakout: current close at or above right rim
+    current_close = float(closes[-1])
+    return current_close >= right_rim * 0.98
+
+
 def calculate_fear_greed(df, window=252):
     """
     Calculate a per-ticker Fear & Greed Index (0 = Extreme Fear, 100 = Extreme Greed)
@@ -648,6 +711,31 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
                     if sell_trig: result['sell_score'] += config['fear_greed']['sell_score']
         except Exception as e:
             result['signals']['fear_greed'] = {'error': str(e)}
+
+    # ========== CUP & HANDLE PATTERN ==========
+    if config.get('cup_handle', {}).get('enabled'):
+        try:
+            df = get_df('cup_handle')
+            if df is None or df.empty:
+                result['signals']['cup_handle'] = {'error': 'no data'}
+            else:
+                params  = config['cup_handle'].get('parameters', {})
+                pattern = detect_cup_and_handle(
+                    df,
+                    window     = params.get('window',      120),
+                    depth_min  = params.get('depth_min',  0.10),
+                    depth_max  = params.get('depth_max',  0.50),
+                    handle_max = params.get('handle_max', 0.15),
+                )
+                result['signals']['cup_handle'] = {
+                    'pattern_complete': pattern,
+                    'buy':  pattern,
+                    'sell': False,
+                }
+                if pattern:
+                    result['buy_score'] += config['cup_handle']['buy_score']
+        except Exception as e:
+            result['signals']['cup_handle'] = {'error': str(e)}
 
     # ========== FINAL CLASSIFICATION ==========
     signal, net_score = classify_signal(

@@ -706,42 +706,138 @@ if st.session_state['ta_ticker_list']:
 else:
     st.info("No tickers selected yet. Use the sidebar Ticker Finder or type a symbol above.")
 
-# ── Candlestick chart ─────────────────────────────────────────────────────────
+# ── Candlestick chart with indicator overlays ────────────────────────────────
 _price_data = st.session_state.get('ta_price_data', {})
 if _price_data:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
     st.subheader("📊 Candlestick Chart")
-    _chart_tickers = sorted(_price_data.keys())
-    _sel_chart = st.selectbox(
-        "Select ticker",
-        options=_chart_tickers,
-        key="ta_chart_ticker_sel",
-        label_visibility="collapsed",
-    )
+
+    _cc1, _cc2 = st.columns([2, 4])
+    with _cc1:
+        _chart_tickers = sorted(_price_data.keys())
+        _sel_chart = st.selectbox(
+            "Ticker", options=_chart_tickers, key="ta_chart_ticker_sel",
+        )
+    with _cc2:
+        _overlay_options  = ["SMA (short)", "SMA (long)", "EMA", "Bollinger Bands"]
+        _subpanel_options = ["Volume", "RSI", "MACD"]
+        _all_ind_opts = _overlay_options + _subpanel_options
+        _sel_inds = st.multiselect(
+            "Overlay indicators", options=_all_ind_opts,
+            default=["SMA (short)", "SMA (long)"],
+            key="ta_chart_inds",
+        )
+
     if _sel_chart and _sel_chart in _price_data:
-        import plotly.graph_objects as go
         _df_c = _price_data[_sel_chart].copy()
         _df_c.index = pd.to_datetime(_df_c.index)
-        _fig = go.Figure(data=[go.Candlestick(
+
+        # Determine subplots needed
+        _sub_panels = [i for i in _subpanel_options if i in _sel_inds]
+        _n_rows  = 1 + len(_sub_panels)
+        _row_h   = [0.6] + [0.2 / max(len(_sub_panels), 1)] * len(_sub_panels) if _sub_panels else [1.0]
+        _row_h   = [0.6] + [0.4 / len(_sub_panels)] * len(_sub_panels) if _sub_panels else [1.0]
+
+        _fig = make_subplots(
+            rows=_n_rows, cols=1,
+            shared_xaxes=True,
+            row_heights=_row_h,
+            vertical_spacing=0.03,
+        )
+
+        # ── Candlestick (row 1) ───────────────────────────────────────
+        _fig.add_trace(go.Candlestick(
             x=_df_c.index,
-            open=_df_c['open'],
-            high=_df_c['high'],
-            low=_df_c['low'],
-            close=_df_c['close'],
+            open=_df_c['open'], high=_df_c['high'],
+            low=_df_c['low'],   close=_df_c['close'],
             increasing_line_color='#26a69a',
             decreasing_line_color='#ef5350',
-        )])
+            name="Price",
+        ), row=1, col=1)
+
+        # ── Price overlays ───────────────────────────────────────────
+        _ic = indicator_config  # already loaded from scoring_config
+        if "SMA (short)" in _sel_inds:
+            _p = _ic.get('sma', {}).get('parameters', {}).get('period_short', 15)
+            _sma_s = _df_c['close'].rolling(_p).mean()
+            _fig.add_trace(go.Scatter(x=_df_c.index, y=_sma_s, name=f"SMA({_p})",
+                                      line=dict(color='#f5a623', width=1.5)), row=1, col=1)
+        if "SMA (long)" in _sel_inds:
+            _p = _ic.get('sma', {}).get('parameters', {}).get('period_long', 45)
+            _sma_l = _df_c['close'].rolling(_p).mean()
+            _fig.add_trace(go.Scatter(x=_df_c.index, y=_sma_l, name=f"SMA({_p})",
+                                      line=dict(color='#9b59b6', width=1.5)), row=1, col=1)
+        if "EMA" in _sel_inds:
+            _p = _ic.get('ema', {}).get('parameters', {}).get('period', 15)
+            _ema = _df_c['close'].ewm(span=_p, adjust=False).mean()
+            _fig.add_trace(go.Scatter(x=_df_c.index, y=_ema, name=f"EMA({_p})",
+                                      line=dict(color='#3498db', width=1.5)), row=1, col=1)
+        if "Bollinger Bands" in _sel_inds:
+            _p   = _ic.get('bollinger', {}).get('parameters', {}).get('period',  20)
+            _std = _ic.get('bollinger', {}).get('parameters', {}).get('std_dev', 2.0)
+            _mid = _df_c['close'].rolling(_p).mean()
+            _sd  = _df_c['close'].rolling(_p).std()
+            _fig.add_trace(go.Scatter(x=_df_c.index, y=_mid + _std * _sd,
+                                      name="BB Upper", line=dict(color='rgba(150,150,150,0.6)', width=1, dash='dot')), row=1, col=1)
+            _fig.add_trace(go.Scatter(x=_df_c.index, y=_mid - _std * _sd,
+                                      name="BB Lower", line=dict(color='rgba(150,150,150,0.6)', width=1, dash='dot'),
+                                      fill='tonexty', fillcolor='rgba(150,150,150,0.05)'), row=1, col=1)
+            _fig.add_trace(go.Scatter(x=_df_c.index, y=_mid,
+                                      name="BB Mid", line=dict(color='rgba(150,150,150,0.4)', width=1)), row=1, col=1)
+
+        # ── Sub-panel indicators ──────────────────────────────────────
+        for _si, _panel in enumerate(_sub_panels, start=2):
+            if _panel == "Volume":
+                _colors = ['#26a69a' if c >= o else '#ef5350'
+                           for c, o in zip(_df_c['close'], _df_c['open'])]
+                _fig.add_trace(go.Bar(x=_df_c.index, y=_df_c['volume'],
+                                      name="Volume", marker_color=_colors, opacity=0.7), row=_si, col=1)
+                _fig.update_yaxes(title_text="Volume", row=_si, col=1)
+
+            elif _panel == "RSI":
+                _rp = _ic.get('rsi', {}).get('parameters', {}).get('period', 14)
+                _delta = _df_c['close'].diff()
+                _gain  = _delta.clip(lower=0).rolling(_rp).mean()
+                _loss  = (-_delta.clip(upper=0)).rolling(_rp).mean()
+                _rs    = _gain / _loss.replace(0, float('nan'))
+                _rsi   = 100 - 100 / (1 + _rs)
+                _fig.add_trace(go.Scatter(x=_df_c.index, y=_rsi, name="RSI",
+                                          line=dict(color='#e74c3c', width=1.5)), row=_si, col=1)
+                _fig.add_hline(y=70, line_dash="dot", line_color="red",   opacity=0.5, row=_si, col=1)
+                _fig.add_hline(y=30, line_dash="dot", line_color="green", opacity=0.5, row=_si, col=1)
+                _fig.update_yaxes(title_text="RSI", range=[0, 100], row=_si, col=1)
+
+            elif _panel == "MACD":
+                _mf = _ic.get('macd', {}).get('parameters', {}).get('fast',   12)
+                _ms = _ic.get('macd', {}).get('parameters', {}).get('slow',   26)
+                _mg = _ic.get('macd', {}).get('parameters', {}).get('signal',  9)
+                _ema_f  = _df_c['close'].ewm(span=_mf, adjust=False).mean()
+                _ema_s  = _df_c['close'].ewm(span=_ms, adjust=False).mean()
+                _macd_l = _ema_f - _ema_s
+                _macd_g = _macd_l.ewm(span=_mg, adjust=False).mean()
+                _macd_h = _macd_l - _macd_g
+                _bar_c  = ['#26a69a' if v >= 0 else '#ef5350' for v in _macd_h]
+                _fig.add_trace(go.Bar(x=_df_c.index, y=_macd_h, name="MACD Hist",
+                                      marker_color=_bar_c, opacity=0.6), row=_si, col=1)
+                _fig.add_trace(go.Scatter(x=_df_c.index, y=_macd_l, name="MACD",
+                                          line=dict(color='#3498db', width=1.5)), row=_si, col=1)
+                _fig.add_trace(go.Scatter(x=_df_c.index, y=_macd_g, name="Signal",
+                                          line=dict(color='#f5a623', width=1.5)), row=_si, col=1)
+                _fig.update_yaxes(title_text="MACD", row=_si, col=1)
+
         _fig.update_layout(
-            title=dict(text=f"{_sel_chart}", font=dict(size=16)),
-            xaxis_title="Date",
-            yaxis_title="Price",
+            title=dict(text=_sel_chart, font=dict(size=16)),
+            height=400 + 180 * len(_sub_panels),
             xaxis_rangeslider_visible=False,
-            height=500,
-            margin=dict(l=40, r=40, t=50, b=40),
+            legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='left', x=0),
+            margin=dict(l=40, r=40, t=60, b=40),
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
         )
-        _fig.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.2)')
-        _fig.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.2)')
+        _fig.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
+        _fig.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
         st.plotly_chart(_fig, use_container_width=True)
 
 # symbols_list is always driven by the table
