@@ -706,6 +706,44 @@ if st.session_state['ta_ticker_list']:
 else:
     st.info("No tickers selected yet. Use the sidebar Ticker Finder or type a symbol above.")
 
+# ── Candlestick chart ─────────────────────────────────────────────────────────
+_price_data = st.session_state.get('ta_price_data', {})
+if _price_data:
+    st.subheader("📊 Candlestick Chart")
+    _chart_tickers = sorted(_price_data.keys())
+    _sel_chart = st.selectbox(
+        "Select ticker",
+        options=_chart_tickers,
+        key="ta_chart_ticker_sel",
+        label_visibility="collapsed",
+    )
+    if _sel_chart and _sel_chart in _price_data:
+        import plotly.graph_objects as go
+        _df_c = _price_data[_sel_chart].copy()
+        _df_c.index = pd.to_datetime(_df_c.index)
+        _fig = go.Figure(data=[go.Candlestick(
+            x=_df_c.index,
+            open=_df_c['open'],
+            high=_df_c['high'],
+            low=_df_c['low'],
+            close=_df_c['close'],
+            increasing_line_color='#26a69a',
+            decreasing_line_color='#ef5350',
+        )])
+        _fig.update_layout(
+            title=dict(text=f"{_sel_chart}", font=dict(size=16)),
+            xaxis_title="Date",
+            yaxis_title="Price",
+            xaxis_rangeslider_visible=False,
+            height=500,
+            margin=dict(l=40, r=40, t=50, b=40),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+        )
+        _fig.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.2)')
+        _fig.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.2)')
+        st.plotly_chart(_fig, use_container_width=True)
+
 # symbols_list is always driven by the table
 symbols_list = list(dict.fromkeys(st.session_state['ta_ticker_list']))
 
@@ -788,6 +826,8 @@ if _run_btn_header:
                 st.stop()
 
             st.success(f"✅ Price data fetched via {_source_label} for {len(all_tickers_found)} ticker(s)")
+            # Persist daily OHLCV for the candlestick chart
+            st.session_state['ta_price_data'] = tickers_data_by_interval.get('daily', {})
 
         except Exception as e:
             st.error(f"Error downloading data: {str(e)}")
