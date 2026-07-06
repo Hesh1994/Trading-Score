@@ -395,6 +395,11 @@ if st.session_state.get('canslim_results'):
     # Pre-compute adjusted scores (reads session_state widget values set by expanders)
     _adj_scores = {r['symbol']: _calc_adjusted(r) for r in filtered_results}
 
+    # Publish adjusted scores so the Scoring Dashboard can read them without re-running
+    st.session_state['canslim_adjusted_scores'] = {
+        sym: score for sym, (score, _) in _adj_scores.items()
+    }
+
     # Sort by adjusted score descending for correct ranking
     _sorted_results = sorted(filtered_results,
                              key=lambda r: _adj_scores[r['symbol']][0], reverse=True)

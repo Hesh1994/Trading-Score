@@ -467,6 +467,14 @@ if _canslim_enabled:
     _w_canslim = st.sidebar.number_input(
         "CANSLIM %", min_value=0, max_value=100, value=25, step=5, key="w_canslim"
     )
+    # Show CANSLIM data status
+    _cs_adj = st.session_state.get('canslim_adjusted_scores', {})
+    if _cs_adj:
+        _tickers_now = st.session_state.get('ta_ticker_list', [])
+        _matched_n = sum(1 for t in _tickers_now if t in _cs_adj)
+        st.sidebar.success(f"✅ CANSLIM: {_matched_n}/{len(_tickers_now)} tickers loaded from CANSLIM Dashboard")
+    else:
+        st.sidebar.warning("⚠️ No CANSLIM scores yet — run the **CANSLIM Dashboard** first, then come back here.")
 
 _total_w = _w_tech + _w_fg + _w_canslim
 _total_label = f"Total: {_total_w}%"
@@ -535,7 +543,8 @@ with _btn_col:
 # ── Editable table with remove checkboxes + score columns ────────────────────
 if st.session_state['ta_ticker_list']:
     _scores        = st.session_state.get('ta_scores', {})
-    _canslim_scores= st.session_state.get('ta_canslim_scores', {})
+    _canslim_scores= st.session_state.get('ta_canslim_scores',
+                        st.session_state.get('canslim_adjusted_scores', {}))
     _fg_scores     = st.session_state.get('ta_fg_scores', {})
     _scores_history= st.session_state.get('ta_scores_history', {})
     _fg_history    = st.session_state.get('ta_fg_history', {})
@@ -867,16 +876,17 @@ if _run_btn_header:
             st.error(traceback.format_exc())
             st.stop()
     
-    # ========== CANSLIM SCORING (same tickers) ==========
-    if fmp_key and _canslim_enabled:
-        with st.spinner("📊 Calculating CANSLIM scores…"):
-            try:
-                _canslim_results = score_canslim_universe(symbols_list, fmp_api_key=fmp_key)
-                st.session_state['ta_canslim_scores'] = {
-                    r['symbol']: round(r['score'], 2) for r in _canslim_results
-                }
-            except Exception:
-                st.session_state['ta_canslim_scores'] = {}
+    # ========== CANSLIM SCORING — read from CANSLIM Dashboard session state ==========
+    if _canslim_enabled:
+        _cs_adj = st.session_state.get('canslim_adjusted_scores', {})
+        if _cs_adj:
+            # Use scores already computed (and manually adjusted) in the CANSLIM Dashboard
+            st.session_state['ta_canslim_scores'] = {
+                sym: round(score, 2) for sym, score in _cs_adj.items()
+            }
+        else:
+            st.session_state['ta_canslim_scores'] = {}
+            st.warning("⚠️ CANSLIM scores not loaded — please run the **CANSLIM Dashboard** first, then re-run analysis here.")
 
     # ========== DISPLAY RESULTS ==========
     st.success("✅ Scoring complete!")
