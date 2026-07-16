@@ -272,13 +272,18 @@ with _pm_col2:
                 _pm_selected.append(_t)
 
 # ── Parameters ────────────────────────────────────────────────────────────────
-_pc1, _pc2, _pc3 = st.columns(3)
+_pc1, _pc2, _pc3, _pc4, _pc5 = st.columns(5)
 _pm_lookback    = _pc1.number_input("History (days)", min_value=60, max_value=1260,
                                     value=252, step=21, key="pm_lookback")
 _pm_rf          = _pc2.number_input("Risk-free rate (%)", min_value=0.0, max_value=20.0,
                                     value=4.5, step=0.1, key="pm_rf") / 100
 _pm_n_port      = _pc3.number_input("Frontier points", min_value=50, max_value=500,
                                     value=200, step=50, key="pm_nport")
+_pm_tgt_ret     = _pc4.number_input("Target Return (% pa)", min_value=-50.0, max_value=200.0,
+                                    value=10.0, step=0.5, key="pm_tgt_ret") / 100
+_pm_max_risk    = _pc5.number_input("Max Risk (% pa)", min_value=1.0, max_value=100.0,
+                                    value=20.0, step=0.5, key="pm_max_risk",
+                                    help="Maximum annualised volatility allowed for the target-return portfolio") / 100
 _pm_allow_short = st.checkbox("Allow short selling", value=False, key="pm_allow_short")
 
 if not _pm_run:
@@ -377,6 +382,20 @@ with st.spinner("Optimising portfolios…"):
     _ret_mv = _port_ret(_w_mv)
     _vol_mv = _port_vol(_w_mv)
 
+    # Target-return portfolio: min vol s.t. return = target
+    _cons_tr = [_cons_sum, {'type': 'eq', 'fun': lambda w, t=_pm_tgt_ret: _port_ret(w) - t}]
+    _res_tr  = minimize(_port_vol, _w0, method='SLSQP',
+                        bounds=_bounds, constraints=_cons_tr,
+                        options={'ftol': 1e-9, 'maxiter': 1000})
+    if _res_tr.success:
+        _w_tr   = _res_tr.x
+        _ret_tr = _port_ret(_w_tr)
+        _vol_tr = _port_vol(_w_tr)
+        _tr_feasible = True
+    else:
+        _w_tr = _w0; _ret_tr = _port_ret(_w0); _vol_tr = _port_vol(_w0)
+        _tr_feasible = False
+
     _ret_min_f = _ret_mv
     _ret_max_f = float(_mu.max())
     _targets   = np.linspace(_ret_min_f, _ret_max_f, int(_pm_n_port))
@@ -397,18 +416,22 @@ _asset_ret = [float(_mu[t]) * 100 for t in _tickers]
 _equal_w        = np.ones(_n) / _n
 _port_rets_ms   = _rets.values @ _w_ms
 _port_rets_mv   = _rets.values @ _w_mv
+_port_rets_tr   = _rets.values @ _w_tr
 _port_rets_eq   = _rets.values @ _equal_w
 
 _cum_ms  = np.cumprod(1 + _port_rets_ms)
 _cum_mv  = np.cumprod(1 + _port_rets_mv)
+_cum_tr  = np.cumprod(1 + _port_rets_tr)
 _cum_eq  = np.cumprod(1 + _port_rets_eq)
 
 _hpr_ms  = float(_cum_ms[-1] - 1) * 100
 _hpr_mv  = float(_cum_mv[-1] - 1) * 100
+_hpr_tr  = float(_cum_tr[-1] - 1) * 100
 _hpr_eq  = float(_cum_eq[-1] - 1) * 100
 
 _sharpe_ms = (_ret_ms - _pm_rf) / _vol_ms if _vol_ms > 0 else 0.0
 _sharpe_mv = (_ret_mv - _pm_rf) / _vol_mv if _vol_mv > 0 else 0.0
+_sharpe_tr = (_ret_tr - _pm_rf) / _vol_tr if _vol_tr > 0 else 0.0
 
 # ── 4. Summary metrics ────────────────────────────────────────────────────────
 st.subheader("📈 Max Sharpe Portfolio")
@@ -426,6 +449,33 @@ _mv2.metric("Holding Period Return", f"{_hpr_mv:.2f}%",
             help=f"Total cumulative return over {_pm_lookback} trading days")
 _mv3.metric("Annualised Volatility", f"{_vol_mv*100:.2f}%")
 _mv4.metric("Sharpe Ratio",          f"{_sharpe_mv:.2f}")
+
+# ── Target Return Portfolio ───────────────────────────────────────────────────
+_tr_label = f"🎯 Target Return Portfolio  ({_pm_tgt_ret*100:.1f}% pa)"
+if not _tr_feasible:
+    st.warning(
+        f"Target return of **{_pm_tgt_ret*100:.1f}%** is not achievable with the selected tickers "
+        f"(max feasible ≈ {_mu.max()*100:.1f}%). Showing equal-weight fallback."
+    )
+st.subheader(_tr_label)
+_exceeds_risk = _vol_tr > _pm_max_risk
+_tr1, _tr2, _tr3, _tr4, _tr5 = st.columns(5)
+_tr1.metric("Target Return",       f"{_pm_tgt_ret*100:.1f}%")
+_tr2.metric("Achieved Return",     f"{_ret_tr*100:.2f}%")
+_tr3.metric("Holding Period Return", f"{_hpr_tr:.2f}%",
+            help=f"Total cumulative return over {_pm_lookback} trading days")
+_tr4.metric(
+    "Total Risk (Volatility)",
+    f"{_vol_tr*100:.2f}%",
+    delta=f"{'⚠️ exceeds' if _exceeds_risk else 'within'} {_pm_max_risk*100:.1f}% limit",
+    delta_color="inverse" if _exceeds_risk else "normal",
+)
+_tr5.metric("Sharpe Ratio", f"{_sharpe_tr:.2f}")
+if _exceeds_risk:
+    st.warning(
+        f"Portfolio risk **{_vol_tr*100:.2f}%** exceeds your max risk limit of "
+        f"**{_pm_max_risk*100:.1f}%**. Consider raising the limit or lowering the target return."
+    )
 
 st.markdown("")
 
@@ -463,6 +513,21 @@ _fig_ef.add_trace(go.Scatter(
     text=['Min Var'], textposition='top right',
 ))
 
+if _tr_feasible:
+    _fig_ef.add_trace(go.Scatter(
+        x=[_vol_tr * 100], y=[_ret_tr * 100],
+        mode='markers+text', name='Target Return',
+        marker=dict(size=15, color='#f39c12', symbol='triangle-up'),
+        text=[f'Target {_pm_tgt_ret*100:.1f}%'], textposition='top right',
+    ))
+# Max Risk vertical line
+_fig_ef.add_vline(
+    x=_pm_max_risk * 100,
+    line_dash='dash', line_color='orange', line_width=1.5,
+    annotation_text=f"Max Risk {_pm_max_risk*100:.1f}%",
+    annotation_position="top right",
+)
+
 _fig_ef.update_layout(
     title='Efficient Frontier',
     xaxis_title='Annualised Volatility (%)',
@@ -490,6 +555,11 @@ _fig_eq.add_trace(go.Scatter(
     x=_eq_dates, y=_cum_mv * 100,
     mode='lines', name='Min Variance',
     line=dict(color='#e74c3c', width=2),
+))
+_fig_eq.add_trace(go.Scatter(
+    x=_eq_dates, y=_cum_tr * 100,
+    mode='lines', name=f'Target {_pm_tgt_ret*100:.1f}%',
+    line=dict(color='#f39c12', width=2, dash='dash'),
 ))
 _fig_eq.add_trace(go.Scatter(
     x=_eq_dates, y=_cum_eq * 100,
@@ -539,6 +609,7 @@ for i, _t in enumerate(_tickers):
                               if _asset_vol[i] > 0 else None,
         'Max Sharpe Wt (%)':  round(float(_w_ms[i]) * 100, 2),
         'Min Var Wt (%)':     round(float(_w_mv[i]) * 100, 2),
+        'Target Ret Wt (%)':  round(float(_w_tr[i]) * 100, 2),
     })
 
 st.dataframe(
@@ -558,6 +629,7 @@ st.dataframe(
         'Sharpe Ratio':       st.column_config.NumberColumn('Sharpe', format='%.2f'),
         'Max Sharpe Wt (%)':  st.column_config.NumberColumn('Max Sharpe Wt %', format='%.2f'),
         'Min Var Wt (%)':     st.column_config.NumberColumn('Min Var Wt %', format='%.2f'),
+        'Target Ret Wt (%)':  st.column_config.NumberColumn(f'Target {_pm_tgt_ret*100:.1f}% Wt %', format='%.2f'),
     },
 )
 
@@ -576,9 +648,17 @@ _pie2 = go.Figure(go.Pie(
 _pie2.update_layout(title='Min Variance Allocation', height=380,
                     margin=dict(t=50, b=10, l=10, r=10))
 
-_pie_c1, _pie_c2 = st.columns(2)
+_pie3 = go.Figure(go.Pie(
+    labels=_tickers, values=[max(0, w) for w in _w_tr],
+    hole=0.4, textinfo='label+percent',
+))
+_pie3.update_layout(title=f'Target Return ({_pm_tgt_ret*100:.1f}%) Allocation', height=380,
+                    margin=dict(t=50, b=10, l=10, r=10))
+
+_pie_c1, _pie_c2, _pie_c3 = st.columns(3)
 _pie_c1.plotly_chart(_pie1, use_container_width=True)
 _pie_c2.plotly_chart(_pie2, use_container_width=True)
+_pie_c3.plotly_chart(_pie3, use_container_width=True)
 
 st.caption(
     "⚠️ **Disclaimer:** Portfolio weights are based solely on historical price data using "
