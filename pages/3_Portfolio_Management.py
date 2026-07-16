@@ -46,6 +46,7 @@ st.markdown('<hr style="border:none;border-top:3px solid black;margin-top:0;marg
 # ── Score status banners ──────────────────────────────────────────────────────
 _cs_scores     = st.session_state.get('canslim_adjusted_scores', {})
 _ta_scores     = st.session_state.get('ta_scores', {})
+_fg_scores     = st.session_state.get('ta_fg_scores', {})
 _final_scores  = st.session_state.get('ta_final_scores', {})
 
 _b1, _b2 = st.columns(2)
@@ -73,7 +74,7 @@ _th_col1, _th_col2, _th_col3 = st.columns([2, 2, 3])
 with _th_col1:
     _score_type = st.selectbox(
         "Filter by score",
-        options=["Final Score (%)", "TA Score (%)", "CANSLIM Score (%)", "Either (TA or CANSLIM)", "Both (TA and CANSLIM)"],
+        options=["Final Score (%)", "TA Score (%)", "CANSLIM Score (%)", "Fear & Greed (0–100)", "Either (TA or CANSLIM)", "Both (TA and CANSLIM)"],
         key="pm_score_type",
     )
 with _th_col2:
@@ -100,16 +101,23 @@ def _ta_pct(sym):
     v = _ta_scores.get(sym)
     return round(float(v), 1) if v is not None else None
 
+def _fg_val(sym):
+    v = _fg_scores.get(sym)
+    return round(float(v), 1) if v is not None else None
+
 def _passes_threshold(sym):
     fs = _final_pct(sym)
     cs = _canslim_pct(sym)
     ta = _ta_pct(sym)
+    fg = _fg_val(sym)
     if _score_type == "Final Score (%)":
         return fs is not None and fs >= _threshold
     elif _score_type == "TA Score (%)":
         return ta is not None and ta >= _threshold
     elif _score_type == "CANSLIM Score (%)":
         return cs is not None and cs >= _threshold
+    elif _score_type == "Fear & Greed (0–100)":
+        return fg is not None and fg >= _threshold
     elif _score_type == "Either (TA or CANSLIM)":
         return (ta is not None and ta >= _threshold) or (cs is not None and cs >= _threshold)
     else:  # Both
@@ -122,13 +130,15 @@ if _pm_all_pool:
         _fs = _final_pct(_t)
         _cs = _canslim_pct(_t)
         _ta = _ta_pct(_t)
+        _fg = _fg_val(_t)
         _ok = _passes_threshold(_t)
         _score_rows.append({
-            'Ticker':        _t,
-            'Final Score (%)': _fs,
-            'CANSLIM (%)':   _cs,
-            'TA Score (%)':  _ta,
-            'Passes Filter': '✅ Yes' if _ok else '❌ No',
+            'Ticker':           _t,
+            'Final Score (%)':  _fs,
+            'TA Score (%)':     _ta,
+            'CANSLIM (%)':      _cs,
+            'Fear & Greed':     _fg,
+            'Passes Filter':    '✅ Yes' if _ok else '❌ No',
         })
     st.dataframe(
         pd.DataFrame(_score_rows),
@@ -137,8 +147,9 @@ if _pm_all_pool:
         column_config={
             'Ticker':          st.column_config.TextColumn('Ticker'),
             'Final Score (%)': st.column_config.NumberColumn('Final Score %', format='%.1f'),
-            'CANSLIM (%)':     st.column_config.NumberColumn('CANSLIM %', format='%.1f'),
             'TA Score (%)':    st.column_config.NumberColumn('TA Score %', format='%.1f'),
+            'CANSLIM (%)':     st.column_config.NumberColumn('CANSLIM %', format='%.1f'),
+            'Fear & Greed':    st.column_config.NumberColumn('Fear & Greed', format='%.1f'),
             'Passes Filter':   st.column_config.TextColumn('Passes Filter'),
         },
     )
@@ -350,8 +361,9 @@ for i, _t in enumerate(_tickers):
     _wt_rows.append({
         'Ticker':             _t,
         'Final Score (%)':    _final_scores.get(_t),
-        'CANSLIM Score':      round(_cs_scores[_t], 1) if _t in _cs_scores else None,
         'TA Score (%)':       _ta_scores.get(_t),
+        'CANSLIM Score':      round(_cs_scores[_t], 1) if _t in _cs_scores else None,
+        'Fear & Greed':       round(float(_fg_scores[_t]), 1) if _t in _fg_scores else None,
         'Exp. Return (% pa)': round(_asset_ret[i], 2),
         'Volatility (% pa)':  round(_asset_vol[i], 2),
         'Sharpe Ratio':       round((_asset_ret[i]/100 - _pm_rf) / (_asset_vol[i]/100), 2)
@@ -367,8 +379,9 @@ st.dataframe(
     column_config={
         'Ticker':             st.column_config.TextColumn('Ticker'),
         'Final Score (%)':    st.column_config.NumberColumn('Final Score %', format='%.1f'),
-        'CANSLIM Score':      st.column_config.NumberColumn('CANSLIM', format='%.1f'),
         'TA Score (%)':       st.column_config.NumberColumn('TA Score %', format='%.1f'),
+        'CANSLIM Score':      st.column_config.NumberColumn('CANSLIM', format='%.1f'),
+        'Fear & Greed':       st.column_config.NumberColumn('Fear & Greed', format='%.1f'),
         'Exp. Return (% pa)': st.column_config.NumberColumn('Exp. Return %', format='%.2f'),
         'Volatility (% pa)':  st.column_config.NumberColumn('Volatility %', format='%.2f'),
         'Sharpe Ratio':       st.column_config.NumberColumn('Sharpe', format='%.2f'),
