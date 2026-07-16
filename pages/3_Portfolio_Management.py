@@ -34,19 +34,80 @@ if 'fmp_key_loaded' not in st.session_state:
 
 fmp_key = st.session_state.get('fmp_key_value', '')
 
-# ── Page header ───────────────────────────────────────────────────────────────
-_hdr_col, _btn_col = st.columns([4, 1])
-with _hdr_col:
-    st.title("💼 Portfolio Management")
-    st.caption(
-        "Build a portfolio from your screener tickers. "
-        "Allocation is derived from **mean-variance optimisation** (Markowitz Efficient Frontier) "
-        "using historical daily returns."
-    )
-_btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
-_pm_run = _btn_col.button("📐 Optimise Portfolio", type="primary",
-                           use_container_width=True, key="pm_run_btn")
-st.markdown('<hr style="border:none;border-top:3px solid black;margin-top:0;margin-bottom:1rem;">', unsafe_allow_html=True)
+# ── Page header (sticky) ──────────────────────────────────────────────────────
+# The entire header is rendered as one HTML block so it can be position:sticky.
+# A zero-height iframe (st.components) wires the HTML button → real st.button.
+st.markdown("""
+<style>
+.pm-sticky {
+    position: sticky;
+    top: 2.75rem;
+    z-index: 999;
+    background: white;
+    padding: 0.6rem 0 0.7rem;
+    border-bottom: 3px solid black;
+    margin-bottom: 1rem;
+}
+[data-theme="dark"] .pm-sticky { background: #0e1117; }
+.pm-hdr-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.pm-title { font-size: 2rem; font-weight: 700; margin: 0; line-height: 1.2; }
+.pm-cap { font-size: 0.8rem; color: grey; margin-top: 0.2rem; }
+.pm-opt-btn {
+    background: #ff4b4b;
+    color: white;
+    border: none;
+    border-radius: 0.4rem;
+    padding: 0.45rem 1.1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.pm-opt-btn:hover { background: #c0392b; }
+</style>
+<div class="pm-sticky">
+  <div class="pm-hdr-row">
+    <div>
+      <div class="pm-title">💼 Portfolio Management</div>
+      <div class="pm-cap">
+        Build a portfolio from your screener tickers.
+        Allocation is derived from <strong>mean-variance optimisation</strong>
+        (Markowitz Efficient Frontier) using historical daily returns.
+      </div>
+    </div>
+    <button class="pm-opt-btn" id="pm-fake-btn">📐 Optimise Portfolio</button>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Zero-height iframe — JS reaches window.parent to wire fake → real button
+import streamlit.components.v1 as _stc
+_stc.html("""
+<script>
+(function wire(){
+  var pd = window.parent.document;
+  var fake = pd.getElementById('pm-fake-btn');
+  if(!fake){ setTimeout(wire, 150); return; }
+  // Find the real Streamlit button by label text
+  var all = pd.querySelectorAll('button');
+  var real = null;
+  for(var i=0;i<all.length;i++){
+    if(all[i].textContent.trim().startsWith('\u{1F4D0} Optimise') &&
+       all[i] !== fake){ real = all[i]; break; }
+  }
+  if(!real){ setTimeout(wire, 150); return; }
+  // Hide the real button's Streamlit wrapper
+  var wrap = real.closest('[data-testid="stButton"]') || real.parentElement;
+  if(wrap) wrap.style.cssText = 'height:0;overflow:hidden;margin:0;padding:0;';
+  // Wire click
+  fake.addEventListener('click', function(){ real.click(); });
+})();
+</script>
+""", height=0, scrolling=False)
+
+_pm_run = st.button("📐 Optimise Portfolio", type="primary",
+                    use_container_width=False, key="pm_run_btn")
 
 # ── Score status banners ──────────────────────────────────────────────────────
 _cs_scores     = st.session_state.get('canslim_adjusted_scores', {})
