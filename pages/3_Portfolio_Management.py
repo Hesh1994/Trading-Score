@@ -325,12 +325,41 @@ with st.spinner("Optimising portfolios…"):
 _asset_vol = [float(np.sqrt(_sigma.loc[t, t])) * 100 for t in _tickers]
 _asset_ret = [float(_mu[t]) * 100 for t in _tickers]
 
+# ── Holding period returns & equity curves ────────────────────────────────────
+_equal_w        = np.ones(_n) / _n
+_port_rets_ms   = _rets.values @ _w_ms
+_port_rets_mv   = _rets.values @ _w_mv
+_port_rets_eq   = _rets.values @ _equal_w
+
+_cum_ms  = np.cumprod(1 + _port_rets_ms)
+_cum_mv  = np.cumprod(1 + _port_rets_mv)
+_cum_eq  = np.cumprod(1 + _port_rets_eq)
+
+_hpr_ms  = float(_cum_ms[-1] - 1) * 100
+_hpr_mv  = float(_cum_mv[-1] - 1) * 100
+_hpr_eq  = float(_cum_eq[-1] - 1) * 100
+
+_sharpe_ms = (_ret_ms - _pm_rf) / _vol_ms if _vol_ms > 0 else 0.0
+_sharpe_mv = (_ret_mv - _pm_rf) / _vol_mv if _vol_mv > 0 else 0.0
+
 # ── 4. Summary metrics ────────────────────────────────────────────────────────
-_ps1, _ps2, _ps3, _ps4 = st.columns(4)
-_ps1.metric("Max Sharpe — Return",       f"{_ret_ms*100:.2f}%")
-_ps2.metric("Max Sharpe — Volatility",   f"{_vol_ms*100:.2f}%")
-_ps3.metric("Max Sharpe — Sharpe Ratio", f"{(_ret_ms-_pm_rf)/_vol_ms:.2f}" if _vol_ms > 0 else "—")
-_ps4.metric("Min Variance — Volatility", f"{_vol_mv*100:.2f}%")
+st.subheader("📈 Max Sharpe Portfolio")
+_ms1, _ms2, _ms3, _ms4 = st.columns(4)
+_ms1.metric("Annualised Return",    f"{_ret_ms*100:.2f}%")
+_ms2.metric("Holding Period Return", f"{_hpr_ms:.2f}%",
+            help=f"Total cumulative return over {_pm_lookback} trading days")
+_ms3.metric("Annualised Volatility", f"{_vol_ms*100:.2f}%")
+_ms4.metric("Sharpe Ratio",          f"{_sharpe_ms:.2f}")
+
+st.subheader("🛡️ Min Variance Portfolio")
+_mv1, _mv2, _mv3, _mv4 = st.columns(4)
+_mv1.metric("Annualised Return",     f"{_ret_mv*100:.2f}%")
+_mv2.metric("Holding Period Return", f"{_hpr_mv:.2f}%",
+            help=f"Total cumulative return over {_pm_lookback} trading days")
+_mv3.metric("Annualised Volatility", f"{_vol_mv*100:.2f}%")
+_mv4.metric("Sharpe Ratio",          f"{_sharpe_mv:.2f}")
+
+st.markdown("")
 
 # ── 5. Efficient Frontier chart ───────────────────────────────────────────────
 import plotly.graph_objects as go
@@ -379,17 +408,63 @@ _fig_ef.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
 _fig_ef.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
 st.plotly_chart(_fig_ef, use_container_width=True)
 
+# ── 5b. Equity curve ──────────────────────────────────────────────────────────
+st.subheader("📉 Portfolio Equity Curve")
+_eq_dates = _rets.index
+
+_fig_eq = go.Figure()
+_fig_eq.add_trace(go.Scatter(
+    x=_eq_dates, y=_cum_ms * 100,
+    mode='lines', name='Max Sharpe',
+    line=dict(color='#2ecc71', width=2),
+))
+_fig_eq.add_trace(go.Scatter(
+    x=_eq_dates, y=_cum_mv * 100,
+    mode='lines', name='Min Variance',
+    line=dict(color='#e74c3c', width=2),
+))
+_fig_eq.add_trace(go.Scatter(
+    x=_eq_dates, y=_cum_eq * 100,
+    mode='lines', name='Equal Weight',
+    line=dict(color='#95a5a6', width=1.5, dash='dot'),
+))
+# Individual assets (faint)
+for _t in _tickers:
+    _cum_asset = (1 + _rets[_t]).cumprod() * 100
+    _fig_eq.add_trace(go.Scatter(
+        x=_eq_dates, y=_cum_asset,
+        mode='lines', name=_t,
+        line=dict(width=1),
+        opacity=0.35,
+        showlegend=True,
+    ))
+
+_fig_eq.add_hline(y=100, line_dash='dash', line_color='gray', line_width=1)
+_fig_eq.update_layout(
+    xaxis_title='Date',
+    yaxis_title='Growth of $100',
+    height=460,
+    legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='left', x=0),
+    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+    margin=dict(l=40, r=40, t=60, b=40),
+)
+_fig_eq.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
+_fig_eq.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
+st.plotly_chart(_fig_eq, use_container_width=True)
+
 # ── 6. Weights & metrics table ────────────────────────────────────────────────
 st.subheader("📊 Portfolio Weights & Metrics")
 
 _wt_rows = []
 for i, _t in enumerate(_tickers):
+    _asset_hpr = round(float((1 + _rets[_t]).cumprod().iloc[-1] - 1) * 100, 2)
     _wt_rows.append({
         'Ticker':             _t,
         'Final Score (%)':    _final_scores.get(_t),
         'TA Score (%)':       _ta_scores.get(_t),
         'CANSLIM Score':      round(_cs_scores[_t], 1) if _t in _cs_scores else None,
         'Fear & Greed':       round(float(_fg_scores[_t]), 1) if _t in _fg_scores else None,
+        'HPR (%)':            _asset_hpr,
         'Exp. Return (% pa)': round(_asset_ret[i], 2),
         'Volatility (% pa)':  round(_asset_vol[i], 2),
         'Sharpe Ratio':       round((_asset_ret[i]/100 - _pm_rf) / (_asset_vol[i]/100), 2)
@@ -408,8 +483,10 @@ st.dataframe(
         'TA Score (%)':       st.column_config.NumberColumn('TA Score %', format='%.1f'),
         'CANSLIM Score':      st.column_config.NumberColumn('CANSLIM', format='%.1f'),
         'Fear & Greed':       st.column_config.NumberColumn('Fear & Greed', format='%.1f'),
-        'Exp. Return (% pa)': st.column_config.NumberColumn('Exp. Return %', format='%.2f'),
-        'Volatility (% pa)':  st.column_config.NumberColumn('Volatility %', format='%.2f'),
+        'HPR (%)':            st.column_config.NumberColumn('HPR %', format='%.2f',
+                              help='Holding Period Return — total cumulative return over the lookback window'),
+        'Exp. Return (% pa)': st.column_config.NumberColumn('Exp. Return % pa', format='%.2f'),
+        'Volatility (% pa)':  st.column_config.NumberColumn('Volatility % pa', format='%.2f'),
         'Sharpe Ratio':       st.column_config.NumberColumn('Sharpe', format='%.2f'),
         'Max Sharpe Wt (%)':  st.column_config.NumberColumn('Max Sharpe Wt %', format='%.2f'),
         'Min Var Wt (%)':     st.column_config.NumberColumn('Min Var Wt %', format='%.2f'),
