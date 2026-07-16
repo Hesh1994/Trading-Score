@@ -582,15 +582,54 @@ def _fmp_get(endpoint, api_key, params=None):
     return data
 
 
-def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None):
+def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None,
+                         exchange_codes=None):
     """
-    Fetch sector for every symbol via individual FMP /stable/profile calls.
-    progress_cb(done, total) is called after each call if provided.
+    Fetch sector for every symbol.
+
+    Fast path (exchange_codes provided): one /stable/stock-screener call per
+    exchange code — returns sectors for the whole exchange in a single request,
+    then filters to the requested symbol_list.
+
+    Slow fallback: individual /stable/profile calls (used when exchange_codes
+    is None or the screener returns no data for an exchange).
+
     Returns dict {symbol: sector_string}.
     """
-    sector_map = {}
+    symbol_set = set(symbol_list)
+    sector_map = {s: "" for s in symbol_list}
+
+    # ── Fast path: bulk screener ──────────────────────────────────────────
+    if exchange_codes:
+        covered = set()
+        for code in exchange_codes:
+            if code == "__ALL__":
+                continue
+            fmp_code = FMP_EXCHANGE_CODE.get(code, code)
+            try:
+                rows = _fmp_get("stock-screener", api_key,
+                                {"exchange": fmp_code, "limit": 10000})
+                if not rows or not isinstance(rows, list):
+                    continue
+                for r in rows:
+                    sym = r.get("symbol", "")
+                    if sym in symbol_set:
+                        sector_map[sym] = r.get("sector") or ""
+                        covered.add(sym)
+            except Exception:
+                pass
+
+        # Symbols not covered by screener → fall back to profile calls
+        remaining = [s for s in symbol_list if s not in covered]
+        if progress_cb:
+            progress_cb(len(covered), len(symbol_list))
+    else:
+        remaining = list(symbol_list)
+
+    # ── Slow fallback for uncovered symbols ───────────────────────────────
+    done = len(symbol_list) - len(remaining)
     total = len(symbol_list)
-    for i, sym in enumerate(symbol_list):
+    for sym in remaining:
         try:
             profile = _fmp_get("profile", api_key, {"symbol": sym})
             if isinstance(profile, list) and profile:
@@ -602,8 +641,10 @@ def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None):
             sector_map[sym] = p.get("sector") or ""
         except Exception:
             sector_map[sym] = ""
+        done += 1
         if progress_cb:
-            progress_cb(i + 1, total)
+            progress_cb(done, total)
+
     return sector_map
 
 

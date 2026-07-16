@@ -211,7 +211,8 @@ else:
                     prog_text.caption(f"{done}/{total} tickers processed")
 
                 sector_map = fetch_ticker_sectors(sym_list, fmp_key,
-                                                  progress_cb=_progress)
+                                                  progress_cb=_progress,
+                                                  exchange_codes=selected_exchange_codes)
                 prog_bar.empty()
                 prog_text.empty()
                 st.session_state[sector_cache_key] = sector_map
