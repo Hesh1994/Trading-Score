@@ -93,7 +93,7 @@ _stc.html("""
   var all = pd.querySelectorAll('button');
   var real = null;
   for(var i=0;i<all.length;i++){
-    if(all[i].textContent.trim().startsWith('\u{1F4D0} Optimise') &&
+    if(all[i].textContent.trim().indexOf('Optimise') !== -1 &&
        all[i] !== fake){ real = all[i]; break; }
   }
   if(!real){ setTimeout(wire, 150); return; }
