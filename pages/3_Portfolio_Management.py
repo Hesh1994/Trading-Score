@@ -34,21 +34,28 @@ if 'fmp_key_loaded' not in st.session_state:
 
 fmp_key = st.session_state.get('fmp_key_value', '')
 
-# ── Page header (sticky) ──────────────────────────────────────────────────────
-# The entire header is rendered as one HTML block so it can be position:sticky.
-# A zero-height iframe (st.components) wires the HTML button → real st.button.
+# ── Page header (fixed) ───────────────────────────────────────────────────────
+# position:sticky fails inside Streamlit's markdown container (parent height =
+# element height, so nothing to scroll through).  position:fixed always works.
+# We add padding-top to the block-container to push content below the bar.
 st.markdown("""
 <style>
-.pm-sticky {
-    position: sticky;
-    top: 2.75rem;
-    z-index: 999;
+.pm-fixed-hdr {
+    position: fixed;
+    top: 3.2rem;
+    left: 0;
+    right: 0;
+    z-index: 1000;
     background: white;
-    padding: 0.6rem 0 0.7rem;
+    padding: 0.6rem 2.5rem 0.65rem;
     border-bottom: 3px solid black;
-    margin-bottom: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
-[data-theme="dark"] .pm-sticky { background: #0e1117; }
+[data-theme="dark"] .pm-fixed-hdr { background: #0e1117; }
+/* Push page body down so content starts below the fixed bar */
+section[data-testid="stMain"] > div > div.block-container {
+    padding-top: 6.5rem !important;
+}
 .pm-hdr-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .pm-title { font-size: 2rem; font-weight: 700; margin: 0; line-height: 1.2; }
 .pm-cap { font-size: 0.8rem; color: grey; margin-top: 0.2rem; }
@@ -66,7 +73,7 @@ st.markdown("""
 }
 .pm-opt-btn:hover { background: #c0392b; }
 </style>
-<div class="pm-sticky">
+<div class="pm-fixed-hdr">
   <div class="pm-hdr-row">
     <div>
       <div class="pm-title">💼 Portfolio Management</div>
