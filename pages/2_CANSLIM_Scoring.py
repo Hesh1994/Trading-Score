@@ -531,11 +531,8 @@ if st.session_state.get('canslim_results'):
 
     st.info("Expand any ticker above to see its full CANSLIM breakdown.")
 
-else:
-    if not run_btn:
-        st.info("👆 Enter tickers in the sidebar and click **Run CANSLIM Analysis** to start.")
-
-    with st.expander("📖 About CANSLIM"):
+# ── About CANSLIM (always visible) ───────────────────────────────────────────
+with st.expander("📖 About CANSLIM"):
         st.markdown("""
         **CANSLIM** is a growth-stock selection methodology developed by William O'Neil.
         Each letter stands for a key criterion:

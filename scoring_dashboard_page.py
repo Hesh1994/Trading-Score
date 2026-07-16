@@ -840,6 +840,8 @@ if _price_data:
         _fig.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
         st.plotly_chart(_fig, use_container_width=True)
 
+        # breakdown is shown below the chart in the analysis block (see further down)
+
 # symbols_list is always driven by the table
 symbols_list = list(dict.fromkeys(st.session_state['ta_ticker_list']))
 
@@ -946,6 +948,67 @@ if _run_btn_header:
                 st.error("No scoring results generated.")
                 st.stop()
             
+            # Persist full results for the per-ticker indicator breakdown panel
+            st.session_state['ta_results'] = {r['ticker']: r for r in results}
+
+            # ── Indicator scoring breakdown ───────────────────────────────────
+            st.markdown("---")
+            st.subheader("📋 Indicator Breakdown")
+            _bk_tickers = [r['ticker'] for r in results]
+            _bk_sel = st.selectbox("Select ticker for breakdown", options=_bk_tickers,
+                                   key="ta_breakdown_ticker")
+            _bk_result = next((r for r in results if r['ticker'] == _bk_sel), None)
+            if _bk_result:
+                _label_map = {k: v.get('label', k) for k, v in indicator_config.items()}
+                _bk_rows = []
+                for _ind_key, _sig in _bk_result.get('signals', {}).items():
+                    if 'error' in _sig:
+                        _status = '⚠️ No data'
+                        _score  = 0.0
+                        _detail = _sig['error']
+                    elif _sig.get('buy'):
+                        _status = '✅ Buy signal'
+                        _score  = indicator_config.get(_ind_key, {}).get('buy_score', 0)
+                        _detail = ''
+                    elif _sig.get('sell'):
+                        _status = '🔴 Sell signal'
+                        _score  = -indicator_config.get(_ind_key, {}).get('sell_score', 0)
+                        _detail = ''
+                    else:
+                        _status = '⬜ Neutral'
+                        _score  = 0.0
+                        _detail = ''
+                    for _vk in ('value', 'rsi', 'mfi', 'k', 'score'):
+                        if _vk in _sig and _sig[_vk] is not None:
+                            try:
+                                _detail = f"{float(_sig[_vk]):.2f}"
+                            except (TypeError, ValueError):
+                                pass
+                            break
+                    if _ind_key == 'cup_handle':
+                        _detail = '1 — complete' if _sig.get('pattern_complete') else '0 — not detected'
+                    _bk_rows.append({
+                        'Indicator': _label_map.get(_ind_key, _ind_key),
+                        'Status':    _status,
+                        'Value':     _detail,
+                        'Score':     _score,
+                    })
+                st.dataframe(
+                    pd.DataFrame(_bk_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'Indicator': st.column_config.TextColumn('Indicator'),
+                        'Status':    st.column_config.TextColumn('Status'),
+                        'Value':     st.column_config.TextColumn('Value'),
+                        'Score':     st.column_config.NumberColumn('Score', format='%.2f'),
+                    },
+                )
+                _sc1, _sc2, _sc3 = st.columns(3)
+                _sc1.metric("Buy Score",  round(_bk_result.get('buy_score',  0), 2))
+                _sc2.metric("Sell Score", round(_bk_result.get('sell_score', 0), 2))
+                _sc3.metric("Net Score",  round(_bk_result.get('net_score',  0), 2))
+
             # Convert to display DataFrame
             results_df = results_to_dataframe(results)
             # % = (number of BUY signals fired) / (number of enabled indicators) × 100

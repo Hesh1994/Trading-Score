@@ -179,8 +179,7 @@ INDICATORS_CONFIG = {
         'label': 'Volume',
         'interval': 'daily',
         'parameters': {
-            'period': 20,              # Days to average volume over
-            'min_volume': 1000000.0,   # Minimum average volume for buy signal
+            'period': 20,   # Rolling window (bars) for average volume comparison
         },
         'buy_score': 1.0,
         'sell_score': 1.0,

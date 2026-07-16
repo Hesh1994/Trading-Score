@@ -266,14 +266,16 @@ def evaluate_macd_criteria(macd_line, macd_signal, buy_criteria, sell_criteria):
 
 
 def calculate_volume_avg(df, period=20):
-    """Calculate rolling average volume over the given period"""
+    """Calculate rolling average volume over the given period."""
     return df['volume'].rolling(window=period, min_periods=1).mean()
 
 
-def evaluate_volume_criteria(avg_volume, min_volume):
-    """Buy when average volume >= min_volume; sell when below."""
-    buy_triggered  = pd.notna(avg_volume) and avg_volume >= min_volume
-    sell_triggered = pd.notna(avg_volume) and avg_volume < min_volume
+def evaluate_volume_criteria(current_volume, avg_volume):
+    """Buy when today's volume > rolling average; sell when below."""
+    if not pd.notna(current_volume) or not pd.notna(avg_volume) or avg_volume == 0:
+        return False, False
+    buy_triggered  = current_volume > avg_volume
+    sell_triggered = current_volume < avg_volume
     return buy_triggered, sell_triggered
 
 
@@ -650,13 +652,14 @@ def score_stock(ticker, tickers_data_by_interval, config=None, global_config=Non
             if df is None or df.empty:
                 result['signals']['volume'] = {'error': 'no data for interval'}
             else:
-                period     = config['volume']['parameters'].get('period', 20)
-                min_volume = config['volume']['parameters'].get('min_volume', 1_000_000)
-                avg_vol    = calculate_volume_avg(df, period)
-                avg_vol_current = avg_vol.iloc[-1]
-                buy_trig, sell_trig = evaluate_volume_criteria(avg_vol_current, min_volume)
+                period      = config['volume']['parameters'].get('period', 20)
+                avg_vol     = calculate_volume_avg(df, period)
+                current_vol = df['volume'].iloc[-1]
+                avg_vol_cur = avg_vol.iloc[-1]
+                buy_trig, sell_trig = evaluate_volume_criteria(current_vol, avg_vol_cur)
                 result['signals']['volume'] = {
-                    'avg_volume': round(avg_vol_current, 0) if pd.notna(avg_vol_current) else None,
+                    'current_volume': round(current_vol, 0) if pd.notna(current_vol) else None,
+                    'avg_volume':     round(avg_vol_cur, 0) if pd.notna(avg_vol_cur) else None,
                     'buy': buy_trig, 'sell': sell_trig,
                 }
                 if buy_trig:  result['buy_score']  += config['volume']['buy_score']
