@@ -77,7 +77,7 @@ with _th_col1:
         key="pm_score_type",
     )
 with _th_col2:
-    _threshold = st.slider(
+    _threshold = st.number_input(
         "Minimum score (%)", min_value=0, max_value=100, value=40, step=5, key="pm_threshold"
     )
 with _th_col3:
