@@ -1088,6 +1088,18 @@ if _run_btn_header:
             st.session_state['ta_canslim_scores'] = {}
             st.warning("⚠️ CANSLIM scores not loaded — please run the **CANSLIM Dashboard** first, then re-run analysis here.")
 
+    # Save final (weighted composite) scores to session state for Portfolio page
+    _all_tickers_now = list(dict.fromkeys(st.session_state['ta_ticker_list']))
+    _sc_now   = st.session_state.get('ta_scores', {})
+    _fg_now   = st.session_state.get('ta_fg_scores', {})
+    _cs_now   = st.session_state.get('ta_canslim_scores',
+                    st.session_state.get('canslim_adjusted_scores', {}))
+    st.session_state['ta_final_scores'] = {
+        t: _final_score(t, _sc_now, _fg_now, _cs_now)
+        for t in _all_tickers_now
+        if _final_score(t, _sc_now, _fg_now, _cs_now) is not None
+    }
+
     # ========== DISPLAY RESULTS ==========
     _status_ph.success("✅ Scoring complete!")
 

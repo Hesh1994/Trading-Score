@@ -44,18 +44,21 @@ st.caption(
 st.markdown('<hr style="border:none;border-top:3px solid black;margin-top:0;margin-bottom:1rem;">', unsafe_allow_html=True)
 
 # ── Score status banners ──────────────────────────────────────────────────────
-_cs_scores = st.session_state.get('canslim_adjusted_scores', {})
-_ta_scores = st.session_state.get('ta_scores', {})
+_cs_scores     = st.session_state.get('canslim_adjusted_scores', {})
+_ta_scores     = st.session_state.get('ta_scores', {})
+_final_scores  = st.session_state.get('ta_final_scores', {})
 
 _b1, _b2 = st.columns(2)
 if _cs_scores:
     _b1.success(f"✅ CANSLIM scores loaded for {len(_cs_scores)} ticker(s)")
 else:
     _b1.warning("⚠️ No CANSLIM scores — run the CANSLIM Dashboard first")
-if _ta_scores:
+if _final_scores:
+    _b2.success(f"✅ Final scores loaded for {len(_final_scores)} ticker(s)")
+elif _ta_scores:
     _b2.success(f"✅ Technical scores loaded for {len(_ta_scores)} ticker(s)")
 else:
-    _b2.warning("⚠️ No Technical scores — run the Scoring Dashboard first")
+    _b2.warning("⚠️ No scores — run the Scoring Dashboard first")
 
 st.markdown("")
 
@@ -70,7 +73,7 @@ _th_col1, _th_col2, _th_col3 = st.columns([2, 2, 3])
 with _th_col1:
     _score_type = st.selectbox(
         "Filter by score",
-        options=["TA Score (%)", "CANSLIM Score (%)", "Either (TA or CANSLIM)", "Both (TA and CANSLIM)"],
+        options=["Final Score (%)", "TA Score (%)", "CANSLIM Score (%)", "Either (TA or CANSLIM)", "Both (TA and CANSLIM)"],
         key="pm_score_type",
     )
 with _th_col2:
@@ -85,18 +88,25 @@ with _th_col3:
     )
 
 # Build score lookup (CANSLIM normalised to %)
+def _final_pct(sym):
+    v = _final_scores.get(sym)
+    return round(float(v), 1) if v is not None else None
+
 def _canslim_pct(sym):
     v = _cs_scores.get(sym)
-    return round(v, 1) if v is not None else None   # already out of 100
+    return round(float(v), 1) if v is not None else None
 
 def _ta_pct(sym):
     v = _ta_scores.get(sym)
     return round(float(v), 1) if v is not None else None
 
 def _passes_threshold(sym):
+    fs = _final_pct(sym)
     cs = _canslim_pct(sym)
     ta = _ta_pct(sym)
-    if _score_type == "TA Score (%)":
+    if _score_type == "Final Score (%)":
+        return fs is not None and fs >= _threshold
+    elif _score_type == "TA Score (%)":
         return ta is not None and ta >= _threshold
     elif _score_type == "CANSLIM Score (%)":
         return cs is not None and cs >= _threshold
@@ -109,11 +119,13 @@ def _passes_threshold(sym):
 if _pm_all_pool:
     _score_rows = []
     for _t in sorted(set(_pm_all_pool)):
+        _fs = _final_pct(_t)
         _cs = _canslim_pct(_t)
         _ta = _ta_pct(_t)
         _ok = _passes_threshold(_t)
         _score_rows.append({
             'Ticker':        _t,
+            'Final Score (%)': _fs,
             'CANSLIM (%)':   _cs,
             'TA Score (%)':  _ta,
             'Passes Filter': '✅ Yes' if _ok else '❌ No',
@@ -123,10 +135,11 @@ if _pm_all_pool:
         use_container_width=True,
         hide_index=True,
         column_config={
-            'Ticker':       st.column_config.TextColumn('Ticker'),
-            'CANSLIM (%)':  st.column_config.NumberColumn('CANSLIM %', format='%.1f'),
-            'TA Score (%)': st.column_config.NumberColumn('TA Score %', format='%.1f'),
-            'Passes Filter': st.column_config.TextColumn('Passes Filter'),
+            'Ticker':          st.column_config.TextColumn('Ticker'),
+            'Final Score (%)': st.column_config.NumberColumn('Final Score %', format='%.1f'),
+            'CANSLIM (%)':     st.column_config.NumberColumn('CANSLIM %', format='%.1f'),
+            'TA Score (%)':    st.column_config.NumberColumn('TA Score %', format='%.1f'),
+            'Passes Filter':   st.column_config.TextColumn('Passes Filter'),
         },
     )
 
@@ -336,6 +349,7 @@ _wt_rows = []
 for i, _t in enumerate(_tickers):
     _wt_rows.append({
         'Ticker':             _t,
+        'Final Score (%)':    _final_scores.get(_t),
         'CANSLIM Score':      round(_cs_scores[_t], 1) if _t in _cs_scores else None,
         'TA Score (%)':       _ta_scores.get(_t),
         'Exp. Return (% pa)': round(_asset_ret[i], 2),
@@ -352,6 +366,7 @@ st.dataframe(
     hide_index=True,
     column_config={
         'Ticker':             st.column_config.TextColumn('Ticker'),
+        'Final Score (%)':    st.column_config.NumberColumn('Final Score %', format='%.1f'),
         'CANSLIM Score':      st.column_config.NumberColumn('CANSLIM', format='%.1f'),
         'TA Score (%)':       st.column_config.NumberColumn('TA Score %', format='%.1f'),
         'Exp. Return (% pa)': st.column_config.NumberColumn('Exp. Return %', format='%.2f'),
