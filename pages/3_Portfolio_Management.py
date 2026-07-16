@@ -64,12 +64,80 @@ _pm_canslim  = list(st.session_state.get('canslim_ticker_list', []))
 _pm_ta       = list(st.session_state.get('ta_ticker_list', []))
 _pm_all_pool = list(dict.fromkeys(_pm_canslim + _pm_ta))
 
+# ── Score threshold filter ────────────────────────────────────────────────────
+st.subheader("🎯 Score Threshold Filter")
+_th_col1, _th_col2, _th_col3 = st.columns([2, 2, 3])
+with _th_col1:
+    _score_type = st.selectbox(
+        "Filter by score",
+        options=["TA Score (%)", "CANSLIM Score (%)", "Either (TA or CANSLIM)", "Both (TA and CANSLIM)"],
+        key="pm_score_type",
+    )
+with _th_col2:
+    _threshold = st.slider(
+        "Minimum score (%)", min_value=0, max_value=100, value=40, step=5, key="pm_threshold"
+    )
+with _th_col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.caption(
+        f"Only tickers with score **≥ {_threshold}%** will be eligible. "
+        "You can still manually override below."
+    )
+
+# Build score lookup (CANSLIM normalised to %)
+def _canslim_pct(sym):
+    v = _cs_scores.get(sym)
+    return round(v, 1) if v is not None else None   # already out of 100
+
+def _ta_pct(sym):
+    v = _ta_scores.get(sym)
+    return round(float(v), 1) if v is not None else None
+
+def _passes_threshold(sym):
+    cs = _canslim_pct(sym)
+    ta = _ta_pct(sym)
+    if _score_type == "TA Score (%)":
+        return ta is not None and ta >= _threshold
+    elif _score_type == "CANSLIM Score (%)":
+        return cs is not None and cs >= _threshold
+    elif _score_type == "Either (TA or CANSLIM)":
+        return (ta is not None and ta >= _threshold) or (cs is not None and cs >= _threshold)
+    else:  # Both
+        return (ta is not None and ta >= _threshold) and (cs is not None and cs >= _threshold)
+
+# Score summary table
+if _pm_all_pool:
+    _score_rows = []
+    for _t in sorted(set(_pm_all_pool)):
+        _cs = _canslim_pct(_t)
+        _ta = _ta_pct(_t)
+        _ok = _passes_threshold(_t)
+        _score_rows.append({
+            'Ticker':        _t,
+            'CANSLIM (%)':   _cs,
+            'TA Score (%)':  _ta,
+            'Passes Filter': '✅ Yes' if _ok else '❌ No',
+        })
+    st.dataframe(
+        pd.DataFrame(_score_rows),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            'Ticker':       st.column_config.TextColumn('Ticker'),
+            'CANSLIM (%)':  st.column_config.NumberColumn('CANSLIM %', format='%.1f'),
+            'TA Score (%)': st.column_config.NumberColumn('TA Score %', format='%.1f'),
+            'Passes Filter': st.column_config.TextColumn('Passes Filter'),
+        },
+    )
+
+_pm_qualifying = [t for t in sorted(set(_pm_all_pool)) if _passes_threshold(t)]
+
 _pm_col1, _pm_col2 = st.columns([3, 1])
 with _pm_col1:
     _pm_selected = st.multiselect(
-        "Portfolio tickers (pre-filled from Scoring + CANSLIM lists)",
+        f"Portfolio tickers — {len(_pm_qualifying)} pass the ≥{_threshold}% filter (edit freely)",
         options=sorted(set(_pm_all_pool)),
-        default=sorted(set(_pm_all_pool)),
+        default=_pm_qualifying,
         key="pm_ticker_sel",
     )
 with _pm_col2:
