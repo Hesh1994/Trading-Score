@@ -48,6 +48,29 @@ _cs_scores     = st.session_state.get('canslim_adjusted_scores', {})
 _ta_scores     = st.session_state.get('ta_scores', {})
 _fg_scores     = st.session_state.get('ta_fg_scores', {})
 _final_scores  = st.session_state.get('ta_final_scores', {})
+_wts           = st.session_state.get('ta_score_weights', {})
+
+# Recompute final scores from components if not saved (e.g. after fresh deployment)
+if not _final_scores and (_ta_scores or _cs_scores or _fg_scores):
+    _wt = _wts.get('w_tech', 1.0)
+    _wc = _wts.get('w_canslim', 0.0)
+    _wf = _wts.get('w_fg', 0.0)
+    _all_syms = set(list(_ta_scores.keys()) + list(_cs_scores.keys()) + list(_fg_scores.keys()))
+    for _sym in _all_syms:
+        _ws_sum, _wt_sum = 0.0, 0.0
+        _tv = _ta_scores.get(_sym)
+        if _tv is not None and _wt > 0:
+            _ws_sum += float(_tv) * _wt; _wt_sum += _wt
+        _cv = _cs_scores.get(_sym)
+        if _cv is not None and _wc > 0:
+            _ws_sum += float(_cv) * _wc; _wt_sum += _wc
+        _fv = _fg_scores.get(_sym)
+        if _fv is not None and _wf > 0:
+            _ws_sum += float(_fv) * _wf; _wt_sum += _wf
+        if _wt_sum == 0 and _tv is not None:
+            _ws_sum, _wt_sum = float(_tv), 1.0
+        if _wt_sum > 0:
+            _final_scores[_sym] = round(_ws_sum / _wt_sum, 1)
 
 _b1, _b2 = st.columns(2)
 if _cs_scores:

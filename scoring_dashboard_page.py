@@ -1088,7 +1088,14 @@ if _run_btn_header:
             st.session_state['ta_canslim_scores'] = {}
             st.warning("⚠️ CANSLIM scores not loaded — please run the **CANSLIM Dashboard** first, then re-run analysis here.")
 
-    # Save final (weighted composite) scores to session state for Portfolio page
+    # Save weights + final scores to session state for Portfolio page
+    st.session_state['ta_score_weights'] = {
+        'w_tech':     float(_w_tech),
+        'w_fg':       float(_w_fg) if _fg_active else 0.0,
+        'w_canslim':  float(_w_canslim) if _canslim_enabled else 0.0,
+        'fg_active':  bool(_fg_active),
+        'canslim_on': bool(_canslim_enabled),
+    }
     _all_tickers_now = list(dict.fromkeys(st.session_state['ta_ticker_list']))
     _sc_now   = st.session_state.get('ta_scores', {})
     _fg_now   = st.session_state.get('ta_fg_scores', {})
