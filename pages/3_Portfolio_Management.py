@@ -35,12 +35,17 @@ if 'fmp_key_loaded' not in st.session_state:
 fmp_key = st.session_state.get('fmp_key_value', '')
 
 # ── Page header ───────────────────────────────────────────────────────────────
-st.title("💼 Portfolio Management")
-st.caption(
-    "Build a portfolio from your screener tickers. "
-    "Allocation is derived from **mean-variance optimisation** (Markowitz Efficient Frontier) "
-    "using historical daily returns."
-)
+_hdr_col, _btn_col = st.columns([4, 1])
+with _hdr_col:
+    st.title("💼 Portfolio Management")
+    st.caption(
+        "Build a portfolio from your screener tickers. "
+        "Allocation is derived from **mean-variance optimisation** (Markowitz Efficient Frontier) "
+        "using historical daily returns."
+    )
+_btn_col.markdown('<div style="margin-top: 1.6rem;"></div>', unsafe_allow_html=True)
+_pm_run = _btn_col.button("📐 Optimise Portfolio", type="primary",
+                           use_container_width=True, key="pm_run_btn")
 st.markdown('<hr style="border:none;border-top:3px solid black;margin-top:0;margin-bottom:1rem;">', unsafe_allow_html=True)
 
 # ── Score status banners ──────────────────────────────────────────────────────
@@ -199,15 +204,13 @@ with _pm_col2:
                 _pm_selected.append(_t)
 
 # ── Parameters ────────────────────────────────────────────────────────────────
-_pc1, _pc2, _pc3, _pc4 = st.columns(4)
+_pc1, _pc2, _pc3 = st.columns(3)
 _pm_lookback    = _pc1.number_input("History (days)", min_value=60, max_value=1260,
                                     value=252, step=21, key="pm_lookback")
 _pm_rf          = _pc2.number_input("Risk-free rate (%)", min_value=0.0, max_value=20.0,
                                     value=4.5, step=0.1, key="pm_rf") / 100
 _pm_n_port      = _pc3.number_input("Frontier points", min_value=50, max_value=500,
                                     value=200, step=50, key="pm_nport")
-_pm_run         = _pc4.button("📐 Optimise Portfolio", type="primary",
-                               use_container_width=True, key="pm_run_btn")
 _pm_allow_short = st.checkbox("Allow short selling", value=False, key="pm_allow_short")
 
 if not _pm_run:
