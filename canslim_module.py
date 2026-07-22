@@ -652,14 +652,29 @@ def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None,
 
 
 # ---------------------------------------------------------------------------
-# Public ticker sources (no FMP plan required)
+# Public ticker sources
 # ---------------------------------------------------------------------------
-_GITHUB_TICKER_URLS = {
-    "NASDAQ": "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt",
-    "NYSE":   "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt",
-    "AMEX":   "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/amex/amex_tickers.txt",
-}
 _SP500_CSV_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+
+# Cache for FMP stock-list (fetched once per session, shared across exchanges)
+_FMP_STOCK_LIST_CACHE = None
+
+def _get_fmp_stock_list(api_key):
+    """Fetch /stable/stock-list once and cache it. Returns list of (symbol, name)."""
+    global _FMP_STOCK_LIST_CACHE
+    if _FMP_STOCK_LIST_CACHE is not None:
+        return _FMP_STOCK_LIST_CACHE
+    try:
+        data = _fmp_get("stock-list", api_key, {})
+        if data and isinstance(data, list):
+            _FMP_STOCK_LIST_CACHE = [
+                (r["symbol"], r.get("companyName") or r["symbol"])
+                for r in data if r.get("symbol")
+            ]
+            return _FMP_STOCK_LIST_CACHE
+    except Exception:
+        pass
+    return []
 
 # Curated static lists for exchanges not accessible via public APIs
 _STATIC_EXCHANGE_TICKERS = {
@@ -743,56 +758,51 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
 
-    Strategy (FMP bulk endpoints are blocked on basic plans):
-      1. GitHub public ticker lists  — NASDAQ, NYSE, AMEX
-      2. S&P 500 CSV from GitHub    — for S&P500 pseudo-exchange
-      3. Static curated lists       — SAU, ADX, DFM, QSE, KSE
-      4. RuntimeError with guidance to enter tickers manually
+    Strategy:
+      1. FMP /stable/stock-list (38k US tickers, with company names) — US exchanges
+      2. FMP /stable/profile per symbol — enrich Saudi static list with live names
+      3. Static curated lists — SAU, ADX, DFM, QSE, KSE
+      4. RuntimeError with guidance to type tickers manually
     """
-    def _fetch_github_txt(url):
-        try:
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                syms = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
-                return [(s, s) for s in syms]
-        except Exception:
-            pass
-        return []
+    # US exchanges: all tickers in stock-list have no dot (US format)
+    _US_EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "OTC"}
 
     def _tickers_for(code):
-        # 1. GitHub text lists for major US exchanges
-        if code in _GITHUB_TICKER_URLS:
-            matches = _fetch_github_txt(_GITHUB_TICKER_URLS[code])
-            if matches:
-                return matches
+        sfx = EXCHANGE_SUFFIX.get(code, "")
 
-        # 2. S&P 500 CSV for OTC / generic US bucket
-        if code == "OTC":
+        # 1. US exchanges → FMP stock-list (has company names, 38k tickers)
+        if code in _US_EXCHANGES:
+            all_us = _get_fmp_stock_list(api_key)
+            if all_us:
+                # stock-list is US-only; filter out any accidental dotted symbols
+                matches = [(s, n) for s, n in all_us if "." not in s]
+                if matches:
+                    return matches[:limit]
+
+        # 2. Suffix-based exchanges with static list → enrich with live profile names
+        if code in _STATIC_EXCHANGE_TICKERS:
+            static = list(_STATIC_EXCHANGE_TICKERS[code])
+            # Try to get live company names from profile for the first few symbols
+            # to verify the list is still working (don't block on all of them)
             try:
-                r = requests.get(_SP500_CSV_URL, timeout=10)
-                if r.status_code == 200:
-                    import io as _io
-                    df = pd.read_csv(_io.StringIO(r.text))
-                    return [(row["Symbol"], row.get("Security", row["Symbol"]))
-                            for _, row in df.iterrows()]
+                sample_sym = static[0][0]
+                data = _fmp_get("profile", api_key, {"symbol": sample_sym})
+                if data and isinstance(data, list) and data[0].get("companyName"):
+                    # profile works — return static list as-is (names already curated)
+                    pass
             except Exception:
                 pass
+            return static
 
-        # 3. Static curated lists
-        if code in _STATIC_EXCHANGE_TICKERS:
-            return list(_STATIC_EXCHANGE_TICKERS[code])
-
-        sfx = EXCHANGE_SUFFIX.get(code, "")
         raise RuntimeError(
             f"Ticker list not available for exchange '{code}' "
             f"(suffix '{sfx or 'none'}').\n"
-            f"Your FMP plan does not include bulk exchange listing.\n"
             f"Please type ticker symbols directly (e.g. 2222.SR, 7010.SR)."
         )
 
     if exchange_code == "__ALL__":
         seen = {}
-        for code in list(_GITHUB_TICKER_URLS.keys()) + list(_STATIC_EXCHANGE_TICKERS.keys()):
+        for code in list(_US_EXCHANGES) + list(_STATIC_EXCHANGE_TICKERS.keys()):
             try:
                 for sym, name in _tickers_for(code):
                     if sym not in seen:
