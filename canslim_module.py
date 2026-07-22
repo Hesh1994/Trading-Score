@@ -651,124 +651,148 @@ def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None,
     return sector_map
 
 
+# ---------------------------------------------------------------------------
+# Public ticker sources (no FMP plan required)
+# ---------------------------------------------------------------------------
+_GITHUB_TICKER_URLS = {
+    "NASDAQ": "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt",
+    "NYSE":   "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt",
+    "AMEX":   "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/amex/amex_tickers.txt",
+}
+_SP500_CSV_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+
+# Curated static lists for exchanges not accessible via public APIs
+_STATIC_EXCHANGE_TICKERS = {
+    "SAU": [
+        # Banks
+        ("1010.SR","Riyad Bank"),("1020.SR","Bank Al-Jazira"),("1030.SR","Saudi Investment Bank"),
+        ("1050.SR","Banque Saudi Fransi"),("1060.SR","Saudi British Bank"),("1080.SR","Arab National Bank"),
+        ("1120.SR","Al Rajhi Bank"),("1140.SR","Bank AlBilad"),("1150.SR","Alinma Bank"),
+        ("1180.SR","Saudi National Bank"),
+        # Energy & Petrochemicals
+        ("2222.SR","Saudi Aramco"),("2010.SR","SABIC"),("2030.SR","Luberef"),
+        ("2082.SR","ACWA Power"),("2300.SR","Petrochem"),("2310.SR","Sipchem"),
+        ("2330.SR","Advanced Petrochemical"),("2350.SR","Saudi Kayan"),("2360.SR","Nama Chemicals"),
+        ("2380.SR","Petro Rabigh"),("5110.SR","Saudi Electricity"),
+        # Mining & Materials
+        ("1211.SR","Ma'aden"),("2040.SR","Saudi Ceramics"),("2060.SR","Tasnee"),
+        ("2070.SR","SAFCO"),("2080.SR","National Gas"),("2240.SR","Zamil Industrial"),
+        # Food & Consumer
+        ("2050.SR","Savola Group"),("2280.SR","Almarai"),("2281.SR","Tanmiah Food"),
+        ("2282.SR","SADAFCO"),
+        # Retail
+        ("4003.SR","Al Othaim Markets"),("4161.SR","BinDawood Holding"),
+        ("4164.SR","Aldrees Petroleum"),("4190.SR","Jarir Marketing"),
+        ("4192.SR","Extra (United Electronics)"),
+        # Healthcare
+        ("4001.SR","Mouwasat Medical"),("4002.SR","Dallah Healthcare"),
+        ("4004.SR","Care"),("4013.SR","Dr. Sulaiman Al Habib"),("4163.SR","Nahdi Medical"),
+        # Cement
+        ("3010.SR","Saudi Cement"),("3020.SR","Yamama Cement"),("3040.SR","Qassim Cement"),
+        ("3080.SR","Southern Province Cement"),("3090.SR","Tabuk Cement"),
+        ("3091.SR","Al Jouf Cement"),("3092.SR","City Cement"),("3093.SR","Hail Cement"),
+        # Telecom & Tech
+        ("7010.SR","STC"),("7020.SR","Mobily"),("7030.SR","Zain Saudi"),
+        ("7203.SR","Elm"),
+        # Real Estate
+        ("4220.SR","Emaar Economic City"),("4230.SR","Red Sea International"),
+        ("4300.SR","Dar Al Arkan"),
+        # Insurance
+        ("8010.SR","Tawuniya"),("8020.SR","Salama"),("8030.SR","MedGulf"),
+        ("8060.SR","Walaa"),("8210.SR","Bupa Arabia"),("8240.SR","Al Rajhi Takaful"),
+        ("8260.SR","AXA Cooperative"),
+        # Hospitality & Tourism
+        ("4210.SR","Taiba Holding"),("4291.SR","Makkah Construction"),
+        # REITs
+        ("9010.SR","Riyad REIT"),("9020.SR","Al Mather REIT"),("9040.SR","SICO Saudi REIT"),
+        ("9090.SR","Alahli REIT"),("9110.SR","Al Rajhi REIT"),
+    ],
+    "ADX": [
+        ("ADNOCDIST.AD","ADNOC Distribution"),("ADNOCDRILLING.AD","ADNOC Drilling"),
+        ("ADNOC.AD","ADNOC"),("ALDAR.AD","Aldar Properties"),("TAQA.AD","TAQA"),
+        ("FAB.AD","First Abu Dhabi Bank"),("ADCB.AD","Abu Dhabi Commercial Bank"),
+        ("NBAD.AD","National Bank of Abu Dhabi"),("ETISALAT.AD","e&"),
+        ("ADPORTS.AD","AD Ports Group"),("IHC.AD","International Holding Company"),
+        ("FERTIGLOBE.AD","Fertiglobe"),("BOROUGE.AD","Borouge"),
+    ],
+    "DFM": [
+        ("EMAAR.DU","Emaar Properties"),("DIB.DU","Dubai Islamic Bank"),
+        ("DU.DU","du Telecom"),("DEWA.DU","DEWA"),("ENBD.DU","Emirates NBD"),
+        ("EMIRATES.DU","Emirates Airline"),("DAMAC.DU","DAMAC Properties"),
+        ("AMLAK.DU","Amlak Finance"),("ITHMAAR.DU","Ithmaar Holding"),
+        ("DFMGI.DU","DFM General Index"),
+    ],
+    "QSE": [
+        ("QNBK.QA","QNB Group"),("ORDS.QA","Ooredoo"),("MARK.QA","Masraf Al Rayan"),
+        ("QGTS.QA","Qatar Gas Transport"),("IQCD.QA","Industries Qatar"),
+        ("CBQK.QA","Commercial Bank"),("QEWS.QA","Qatar Electricity & Water"),
+        ("BRES.QA","Barwa Real Estate"),("AHCS.QA","Aamal Company"),
+        ("GISS.QA","Gulf International Services"),("UDCD.QA","United Development"),
+    ],
+    "KSE": [
+        ("NBK.KW","National Bank of Kuwait"),("ZAIN.KW","Zain"),
+        ("KFIN.KW","Kuwait Finance House"),("BOURSA.KW","Boursa Kuwait"),
+        ("GBK.KW","Gulf Bank"),("BOUBYAN.KW","Boubyan Bank"),
+        ("ALARGAN.KW","Alargan International"),("AGILITY.KW","Agility"),
+    ],
+}
+
+
 def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     """
     Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
 
-    Tries multiple strategies in order until one returns results:
-      1. /stable/stock-screener?exchange=<alias>   (multiple code aliases)
-      2. /api/v3/stock-screener?exchange=<alias>   (older v3 endpoint)
-      3. /stable/search?query=<suffix>             (suffix-based exchanges)
-      4. /stable/search?query=<common term>        (e.g. "Saudi" for SAU)
-
-    Raises RuntimeError if all attempts fail.
+    Strategy (FMP bulk endpoints are blocked on basic plans):
+      1. GitHub public ticker lists  — NASDAQ, NYSE, AMEX
+      2. S&P 500 CSV from GitHub    — for S&P500 pseudo-exchange
+      3. Static curated lists       — SAU, ADX, DFM, QSE, KSE
+      4. RuntimeError with guidance to enter tickers manually
     """
-    # FMP screener exchange codes to try (some exchanges use ISO MIC codes)
-    _ALIASES = {
-        "SAU":    ["XSAU", "SAU", "SR", "SAUDI", "TADAWUL"],
-        "ADX":    ["XADS", "ADX"],
-        "DFM":    ["XDFM", "DFM"],
-        "QSE":    ["XQAT", "QSE"],
-        "KSE":    ["XKUW", "KSE"],
-        "BHB":    ["XBAH", "BHB"],
-        "MSM":    ["XMUS", "MSM"],
-        "EGX":    ["XCAI", "EGX"],
-        "HKSE":   ["HKEX", "HKSE"],
-        "NSE":    ["XNSE", "NSE"],
-        "BSE":    ["XBOM", "BSE"],
-        "TYO":    ["XJPX", "JPX", "TYO", "TSE"],
-        "TASE":   ["XTAE", "TASE"],
-        "JSE":    ["XJSE", "JSE"],
-    }
-
-    # Human-readable search terms to try per exchange if all else fails
-    _SEARCH_TERMS = {
-        "SAU": ["Saudi", "Tadawul", "SABIC"],
-        "ADX": ["Abu Dhabi", "ADNOC"],
-        "DFM": ["Dubai"],
-        "QSE": ["Qatar"],
-        "KSE": ["Kuwait"],
-        "EGX": ["Egypt", "Egyptian"],
-        "TASE": ["Israel", "Tel Aviv"],
-    }
-
-    suffix = EXCHANGE_SUFFIX.get(exchange_code, "")
-
-    def _rows_to_pairs(rows, name_field="companyName"):
-        return [(r["symbol"], r.get(name_field) or r.get("name") or r["symbol"])
-                for r in rows if r.get("symbol")]
-
-    def _try_screener(exc_code):
-        """Try screener on both stable and v3 bases with all known aliases."""
-        aliases = _ALIASES.get(exc_code, [FMP_EXCHANGE_CODE.get(exc_code, exc_code)])
-        for base in [FMP_BASE, FMP_BASE_V3]:
-            for code in aliases:
-                try:
-                    rows = _fmp_get("stock-screener", api_key,
-                                    {"exchange": code, "limit": 10000}, base=base)
-                    if isinstance(rows, list) and rows:
-                        return _rows_to_pairs(rows)
-                except Exception:
-                    pass
+    def _fetch_github_txt(url):
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                syms = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
+                return [(s, s) for s in syms]
+        except Exception:
+            pass
         return []
-
-    def _try_search_suffix(sfx):
-        """Search by suffix string, filter results that end with that suffix."""
-        if not sfx:
-            return []
-        for query in [sfx, sfx.lstrip(".")]:
-            try:
-                rows = _fmp_get("search", api_key, {"query": query, "limit": 1000})
-                if isinstance(rows, list):
-                    hits = [(r["symbol"], r.get("name") or r["symbol"])
-                            for r in rows if r.get("symbol", "").endswith(sfx)]
-                    if hits:
-                        return hits
-            except Exception:
-                pass
-        return []
-
-    def _try_search_terms(exc_code, sfx):
-        """Search by known human-readable terms, filter by suffix."""
-        terms = _SEARCH_TERMS.get(exc_code, [])
-        seen = {}
-        for term in terms:
-            try:
-                rows = _fmp_get("search", api_key, {"query": term, "limit": 1000})
-                if isinstance(rows, list):
-                    for r in rows:
-                        sym = r.get("symbol", "")
-                        if sym and (not sfx or sym.endswith(sfx)):
-                            seen[sym] = r.get("name") or sym
-            except Exception:
-                pass
-        return list(seen.items())
 
     def _tickers_for(code):
+        # 1. GitHub text lists for major US exchanges
+        if code in _GITHUB_TICKER_URLS:
+            matches = _fetch_github_txt(_GITHUB_TICKER_URLS[code])
+            if matches:
+                return matches
+
+        # 2. S&P 500 CSV for OTC / generic US bucket
+        if code == "OTC":
+            try:
+                r = requests.get(_SP500_CSV_URL, timeout=10)
+                if r.status_code == 200:
+                    import io as _io
+                    df = pd.read_csv(_io.StringIO(r.text))
+                    return [(row["Symbol"], row.get("Security", row["Symbol"]))
+                            for _, row in df.iterrows()]
+            except Exception:
+                pass
+
+        # 3. Static curated lists
+        if code in _STATIC_EXCHANGE_TICKERS:
+            return list(_STATIC_EXCHANGE_TICKERS[code])
+
         sfx = EXCHANGE_SUFFIX.get(code, "")
-
-        matches = _try_screener(code)
-        if matches:
-            return matches
-
-        matches = _try_search_suffix(sfx)
-        if matches:
-            return matches
-
-        matches = _try_search_terms(code, sfx)
-        if matches:
-            return matches
-
         raise RuntimeError(
-            f"Could not load tickers for '{code}' (suffix '{sfx or 'none'}').\n"
-            f"Your FMP plan may not include bulk exchange listing.\n"
-            f"Tip: type ticker symbols directly into the 'Add tickers' box."
+            f"Ticker list not available for exchange '{code}' "
+            f"(suffix '{sfx or 'none'}').\n"
+            f"Your FMP plan does not include bulk exchange listing.\n"
+            f"Please type ticker symbols directly (e.g. 2222.SR, 7010.SR)."
         )
 
     if exchange_code == "__ALL__":
         seen = {}
-        for code in EXCHANGE_SUFFIX:
+        for code in list(_GITHUB_TICKER_URLS.keys()) + list(_STATIC_EXCHANGE_TICKERS.keys()):
             try:
                 for sym, name in _tickers_for(code):
                     if sym not in seen:
@@ -778,8 +802,7 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
         if not seen:
             raise RuntimeError(
                 "Could not load tickers from any exchange.\n"
-                "Your FMP plan may not support bulk exchange listing.\n"
-                "Tip: type ticker symbols directly into the 'Add tickers' box."
+                "Please enter ticker symbols manually."
             )
         return sorted(seen.items(), key=lambda x: x[0])[:limit]
 
