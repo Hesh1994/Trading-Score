@@ -569,12 +569,15 @@ def fetch_price_universe_fmp(symbols, start_date, end_date, api_key, interval='d
 # FMP DATA FETCHING
 # ============================================================================
 
-def _fmp_get(endpoint, api_key, params=None):
+FMP_BASE_V3 = "https://financialmodelingprep.com/api/v3"
+
+def _fmp_get(endpoint, api_key, params=None, base=None):
     """Single FMP API request. Raises on HTTP error or API error message."""
     p = {'apikey': api_key}
     if params:
         p.update(params)
-    r = requests.get(f"{FMP_BASE}/{endpoint}", params=p, timeout=15)
+    url_base = base or FMP_BASE
+    r = requests.get(f"{url_base}/{endpoint}", params=p, timeout=15)
     r.raise_for_status()
     data = r.json()
     if isinstance(data, dict) and 'Error Message' in data:
@@ -653,75 +656,114 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
 
-    Strategy (in order):
-      1. /stable/stock-screener?exchange=<fmp_code>  — works for US on basic plan
-      2. /stable/search?query=<suffix>               — fallback for exchanges with
-         a known dot-suffix (e.g. .SR for Saudi, .CA for Egypt); filters by suffix
-      3. RuntimeError with a user-friendly message
+    Tries multiple strategies in order until one returns results:
+      1. /stable/stock-screener?exchange=<alias>   (multiple code aliases)
+      2. /api/v3/stock-screener?exchange=<alias>   (older v3 endpoint)
+      3. /stable/search?query=<suffix>             (suffix-based exchanges)
+      4. /stable/search?query=<common term>        (e.g. "Saudi" for SAU)
 
     Raises RuntimeError if all attempts fail.
     """
-    # Alternative FMP screener codes to try per exchange (some differ from our code)
-    _SCREENER_ALIASES = {
-        "SAU":  ["XSAU", "SAU", "SR"],
-        "ADX":  ["ADX", "XADS"],
-        "DFM":  ["DFM", "XDFM"],
-        "QSE":  ["QSE", "XQAT"],
-        "KSE":  ["KSE", "XKUW"],
-        "EGX":  ["EGX", "XCAI"],
-        "HKSE": ["HKEX", "HKSE"],
-        "NSE":  ["NSE", "XNSE"],
-        "BSE":  ["BSE", "XBOM"],
-        "TYO":  ["JPX", "TYO", "TSE"],
+    # FMP screener exchange codes to try (some exchanges use ISO MIC codes)
+    _ALIASES = {
+        "SAU":    ["XSAU", "SAU", "SR", "SAUDI", "TADAWUL"],
+        "ADX":    ["XADS", "ADX"],
+        "DFM":    ["XDFM", "DFM"],
+        "QSE":    ["XQAT", "QSE"],
+        "KSE":    ["XKUW", "KSE"],
+        "BHB":    ["XBAH", "BHB"],
+        "MSM":    ["XMUS", "MSM"],
+        "EGX":    ["XCAI", "EGX"],
+        "HKSE":   ["HKEX", "HKSE"],
+        "NSE":    ["XNSE", "NSE"],
+        "BSE":    ["XBOM", "BSE"],
+        "TYO":    ["XJPX", "JPX", "TYO", "TSE"],
+        "TASE":   ["XTAE", "TASE"],
+        "JSE":    ["XJSE", "JSE"],
     }
 
-    def _screener_for(code):
-        """Try screener with known alias codes; return list or empty list."""
-        aliases = _SCREENER_ALIASES.get(code, [FMP_EXCHANGE_CODE.get(code, code)])
-        for fmp_code in aliases:
+    # Human-readable search terms to try per exchange if all else fails
+    _SEARCH_TERMS = {
+        "SAU": ["Saudi", "Tadawul", "SABIC"],
+        "ADX": ["Abu Dhabi", "ADNOC"],
+        "DFM": ["Dubai"],
+        "QSE": ["Qatar"],
+        "KSE": ["Kuwait"],
+        "EGX": ["Egypt", "Egyptian"],
+        "TASE": ["Israel", "Tel Aviv"],
+    }
+
+    suffix = EXCHANGE_SUFFIX.get(exchange_code, "")
+
+    def _rows_to_pairs(rows, name_field="companyName"):
+        return [(r["symbol"], r.get(name_field) or r.get("name") or r["symbol"])
+                for r in rows if r.get("symbol")]
+
+    def _try_screener(exc_code):
+        """Try screener on both stable and v3 bases with all known aliases."""
+        aliases = _ALIASES.get(exc_code, [FMP_EXCHANGE_CODE.get(exc_code, exc_code)])
+        for base in [FMP_BASE, FMP_BASE_V3]:
+            for code in aliases:
+                try:
+                    rows = _fmp_get("stock-screener", api_key,
+                                    {"exchange": code, "limit": 10000}, base=base)
+                    if isinstance(rows, list) and rows:
+                        return _rows_to_pairs(rows)
+                except Exception:
+                    pass
+        return []
+
+    def _try_search_suffix(sfx):
+        """Search by suffix string, filter results that end with that suffix."""
+        if not sfx:
+            return []
+        for query in [sfx, sfx.lstrip(".")]:
             try:
-                rows = _fmp_get("stock-screener", api_key,
-                                {"exchange": fmp_code, "limit": 10000})
-                if rows and isinstance(rows, list) and len(rows) > 0:
-                    return [(r["symbol"], r.get("companyName") or r["symbol"])
-                            for r in rows if r.get("symbol")]
+                rows = _fmp_get("search", api_key, {"query": query, "limit": 1000})
+                if isinstance(rows, list):
+                    hits = [(r["symbol"], r.get("name") or r["symbol"])
+                            for r in rows if r.get("symbol", "").endswith(sfx)]
+                    if hits:
+                        return hits
             except Exception:
                 pass
         return []
 
-    def _search_for(suffix):
-        """Fallback: use FMP search with the suffix (including dot) as query."""
-        # Try querying with the dot-suffix directly, then without the dot
-        for query in [suffix, suffix.lstrip(".")]:
+    def _try_search_terms(exc_code, sfx):
+        """Search by known human-readable terms, filter by suffix."""
+        terms = _SEARCH_TERMS.get(exc_code, [])
+        seen = {}
+        for term in terms:
             try:
-                rows = _fmp_get("search", api_key,
-                                {"query": query, "limit": 1000})
-                if rows and isinstance(rows, list):
-                    matches = [(r["symbol"], r.get("name") or r["symbol"])
-                               for r in rows
-                               if r.get("symbol", "").endswith(suffix)]
-                    if matches:
-                        return matches
+                rows = _fmp_get("search", api_key, {"query": term, "limit": 1000})
+                if isinstance(rows, list):
+                    for r in rows:
+                        sym = r.get("symbol", "")
+                        if sym and (not sfx or sym.endswith(sfx)):
+                            seen[sym] = r.get("name") or sym
             except Exception:
                 pass
-        return []
+        return list(seen.items())
 
     def _tickers_for(code):
-        suffix = EXCHANGE_SUFFIX.get(code, "")
-        # 1. screener (tries multiple exchange code aliases)
-        matches = _screener_for(code)
+        sfx = EXCHANGE_SUFFIX.get(code, "")
+
+        matches = _try_screener(code)
         if matches:
             return matches
-        # 2. search fallback (suffix-based exchanges only)
-        if suffix:
-            matches = _search_for(suffix)
-            if matches:
-                return matches
+
+        matches = _try_search_suffix(sfx)
+        if matches:
+            return matches
+
+        matches = _try_search_terms(code, sfx)
+        if matches:
+            return matches
+
         raise RuntimeError(
-            f"Could not load tickers for exchange '{code}' "
-            f"(suffix '{suffix or 'none'}'). "
-            f"Your FMP plan may not support this exchange. "
-            f"Please enter ticker symbols manually."
+            f"Could not load tickers for '{code}' (suffix '{sfx or 'none'}').\n"
+            f"Your FMP plan may not include bulk exchange listing.\n"
+            f"Tip: type ticker symbols directly into the 'Add tickers' box."
         )
 
     if exchange_code == "__ALL__":
@@ -735,9 +777,9 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
                 pass
         if not seen:
             raise RuntimeError(
-                "Could not load tickers from any exchange. "
-                "Your FMP plan may not support exchange screener access. "
-                "Please enter ticker symbols manually."
+                "Could not load tickers from any exchange.\n"
+                "Your FMP plan may not support bulk exchange listing.\n"
+                "Tip: type ticker symbols directly into the 'Add tickers' box."
             )
         return sorted(seen.items(), key=lambda x: x[0])[:limit]
 
