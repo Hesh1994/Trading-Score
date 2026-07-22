@@ -661,35 +661,54 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
 
     Raises RuntimeError if all attempts fail.
     """
+    # Alternative FMP screener codes to try per exchange (some differ from our code)
+    _SCREENER_ALIASES = {
+        "SAU":  ["XSAU", "SAU", "SR"],
+        "ADX":  ["ADX", "XADS"],
+        "DFM":  ["DFM", "XDFM"],
+        "QSE":  ["QSE", "XQAT"],
+        "KSE":  ["KSE", "XKUW"],
+        "EGX":  ["EGX", "XCAI"],
+        "HKSE": ["HKEX", "HKSE"],
+        "NSE":  ["NSE", "XNSE"],
+        "BSE":  ["BSE", "XBOM"],
+        "TYO":  ["JPX", "TYO", "TSE"],
+    }
+
     def _screener_for(code):
-        """Try screener; return list or empty list (never raises)."""
-        fmp_code = FMP_EXCHANGE_CODE.get(code, code)
-        try:
-            rows = _fmp_get("stock-screener", api_key,
-                            {"exchange": fmp_code, "limit": 10000})
-            if rows and isinstance(rows, list):
-                return [(r["symbol"], r.get("companyName") or r["symbol"])
-                        for r in rows if r.get("symbol")]
-        except Exception:
-            pass
+        """Try screener with known alias codes; return list or empty list."""
+        aliases = _SCREENER_ALIASES.get(code, [FMP_EXCHANGE_CODE.get(code, code)])
+        for fmp_code in aliases:
+            try:
+                rows = _fmp_get("stock-screener", api_key,
+                                {"exchange": fmp_code, "limit": 10000})
+                if rows and isinstance(rows, list) and len(rows) > 0:
+                    return [(r["symbol"], r.get("companyName") or r["symbol"])
+                            for r in rows if r.get("symbol")]
+            except Exception:
+                pass
         return []
 
     def _search_for(suffix):
-        """Fallback: search by suffix string, filter results by that suffix."""
-        try:
-            rows = _fmp_get("search", api_key,
-                            {"query": suffix.lstrip("."), "limit": 1000})
-            if rows and isinstance(rows, list):
-                return [(r["symbol"], r.get("name") or r["symbol"])
-                        for r in rows
-                        if r.get("symbol", "").endswith(suffix)]
-        except Exception:
-            pass
+        """Fallback: use FMP search with the suffix (including dot) as query."""
+        # Try querying with the dot-suffix directly, then without the dot
+        for query in [suffix, suffix.lstrip(".")]:
+            try:
+                rows = _fmp_get("search", api_key,
+                                {"query": query, "limit": 1000})
+                if rows and isinstance(rows, list):
+                    matches = [(r["symbol"], r.get("name") or r["symbol"])
+                               for r in rows
+                               if r.get("symbol", "").endswith(suffix)]
+                    if matches:
+                        return matches
+            except Exception:
+                pass
         return []
 
     def _tickers_for(code):
         suffix = EXCHANGE_SUFFIX.get(code, "")
-        # 1. screener
+        # 1. screener (tries multiple exchange code aliases)
         matches = _screener_for(code)
         if matches:
             return matches
@@ -699,9 +718,10 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
             if matches:
                 return matches
         raise RuntimeError(
-            f"Could not load tickers for exchange '{code}'. "
-            f"Your FMP plan may not support this exchange via the API. "
-            f"Please enter ticker symbols manually instead."
+            f"Could not load tickers for exchange '{code}' "
+            f"(suffix '{suffix or 'none'}'). "
+            f"Your FMP plan may not support this exchange. "
+            f"Please enter ticker symbols manually."
         )
 
     if exchange_code == "__ALL__":
