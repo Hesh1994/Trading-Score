@@ -652,9 +652,61 @@ def fetch_ticker_sectors(symbol_list, api_key, progress_cb=None,
 
 
 # ---------------------------------------------------------------------------
-# Public ticker sources
+# FMP dynamic exchange / ticker sources
 # ---------------------------------------------------------------------------
-_SP500_CSV_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+
+# Cache for /stable/available-exchanges (fetched once per session)
+_FMP_EXCHANGES_CACHE = None
+
+def fetch_fmp_available_exchanges(api_key):
+    """
+    Fetch /stable/available-exchanges and cache the result.
+    Returns a list of dicts: {exchange, name, countryName, countryCode, symbolSuffix, delay}
+    """
+    global _FMP_EXCHANGES_CACHE
+    if _FMP_EXCHANGES_CACHE is not None:
+        return _FMP_EXCHANGES_CACHE
+    try:
+        data = _fmp_get("available-exchanges", api_key, {})
+        if data and isinstance(data, list):
+            _FMP_EXCHANGES_CACHE = data
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def build_country_exchange_map(exchanges_data):
+    """
+    Convert /stable/available-exchanges response into COUNTRY_EXCHANGES format.
+    Returns {country_name: [(exchange_code, display_label), ...]}
+    Exchanges with blank countryName are grouped under 'Other'.
+    """
+    from collections import defaultdict
+    result = defaultdict(list)
+    for ex in exchanges_data:
+        country = (ex.get("countryName") or "").strip() or "Other"
+        code    = (ex.get("exchange")    or "").strip()
+        name    = (ex.get("name")        or code).strip()
+        if not code:
+            continue
+        result[country].append((code, f"{name} ({code})"))
+    return dict(result)
+
+
+def build_exchange_suffix_map(exchanges_data):
+    """
+    Convert /stable/available-exchanges response into EXCHANGE_SUFFIX format.
+    Returns {exchange_code: suffix_string}  (suffix "N/A" → "")
+    """
+    result = {}
+    for ex in exchanges_data:
+        code   = (ex.get("exchange")     or "").strip()
+        suffix = (ex.get("symbolSuffix") or "N/A").strip()
+        if code:
+            result[code] = "" if suffix == "N/A" else suffix
+    return result
+
 
 # Cache for FMP stock-list (fetched once per session, shared across exchanges)
 _FMP_STOCK_LIST_CACHE = None
@@ -675,6 +727,32 @@ def _get_fmp_stock_list(api_key):
     except Exception:
         pass
     return []
+
+
+def _screener_tickers(exchange_code, api_key, limit=5000):
+    """
+    Fetch tickers from /stable/company-screener for a given exchange.
+    Paginates (1 000 per page) until `limit` reached or no more results.
+    Returns list of (symbol, company_name).
+    Raises HTTPError (402) for exchanges blocked by the plan — caller handles it.
+    """
+    per_page = 1000
+    results  = []
+    page     = 0
+    while len(results) < limit:
+        batch = _fmp_get(
+            "company-screener", api_key,
+            {"exchange": exchange_code, "limit": per_page, "page": page}
+        )
+        if not batch or not isinstance(batch, list):
+            break
+        for r in batch:
+            if r.get("symbol"):
+                results.append((r["symbol"], r.get("companyName") or r["symbol"]))
+        if len(batch) < per_page:
+            break
+        page += 1
+    return results[:limit]
 
 # Curated static lists for exchanges not accessible via public APIs
 _STATIC_EXCHANGE_TICKERS = {
@@ -758,51 +836,44 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
 
-    Strategy:
-      1. FMP /stable/stock-list (38k US tickers, with company names) — US exchanges
-      2. FMP /stable/profile per symbol — enrich Saudi static list with live names
-      3. Static curated lists — SAU, ADX, DFM, QSE, KSE
-      4. RuntimeError with guidance to type tickers manually
+    Strategy (in order):
+      1. /stable/company-screener?exchange=CODE  — works for US exchanges
+      2. /stable/stock-list (no-dot filter)      — US fallback (comprehensive)
+      3. Static curated lists                     — SAU, ADX, DFM, QSE, KSE
+      4. RuntimeError → user must type manually
     """
-    # US exchanges: all tickers in stock-list have no dot (US format)
-    _US_EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "OTC"}
+    _US_EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "OTC", "PNK", "CBOE"}
 
     def _tickers_for(code):
-        sfx = EXCHANGE_SUFFIX.get(code, "")
+        # 1. Try screener (returns sector/industry data too; blocked for non-US)
+        try:
+            return _screener_tickers(code, api_key, limit)
+        except RuntimeError:
+            pass  # blocked or empty → try next source
+        except Exception:
+            pass
 
-        # 1. US exchanges → FMP stock-list (has company names, 38k tickers)
+        # 2. US exchanges → stock-list (all 38k symbols, no sectors)
         if code in _US_EXCHANGES:
             all_us = _get_fmp_stock_list(api_key)
             if all_us:
-                # stock-list is US-only; filter out any accidental dotted symbols
                 matches = [(s, n) for s, n in all_us if "." not in s]
                 if matches:
                     return matches[:limit]
 
-        # 2. Suffix-based exchanges with static list → enrich with live profile names
+        # 3. Static curated lists for Middle East exchanges
         if code in _STATIC_EXCHANGE_TICKERS:
-            static = list(_STATIC_EXCHANGE_TICKERS[code])
-            # Try to get live company names from profile for the first few symbols
-            # to verify the list is still working (don't block on all of them)
-            try:
-                sample_sym = static[0][0]
-                data = _fmp_get("profile", api_key, {"symbol": sample_sym})
-                if data and isinstance(data, list) and data[0].get("companyName"):
-                    # profile works — return static list as-is (names already curated)
-                    pass
-            except Exception:
-                pass
-            return static
+            return list(_STATIC_EXCHANGE_TICKERS[code])
 
         raise RuntimeError(
-            f"Ticker list not available for exchange '{code}' "
-            f"(suffix '{sfx or 'none'}').\n"
+            f"Ticker list not available for exchange '{code}'.\n"
             f"Please type ticker symbols directly (e.g. 2222.SR, 7010.SR)."
         )
 
     if exchange_code == "__ALL__":
         seen = {}
-        for code in list(_US_EXCHANGES) + list(_STATIC_EXCHANGE_TICKERS.keys()):
+        all_codes = list(_US_EXCHANGES) + list(_STATIC_EXCHANGE_TICKERS.keys())
+        for code in all_codes:
             try:
                 for sym, name in _tickers_for(code):
                     if sym not in seen:

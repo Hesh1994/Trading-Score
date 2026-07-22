@@ -16,6 +16,8 @@ import requests as _req
 try:
     from canslim_module import (score_canslim_universe, COUNTRY_EXCHANGES,
                                 EXCHANGE_SUFFIX, validate_ticker_fmp, format_ticker,
+                                fetch_fmp_available_exchanges,
+                                build_country_exchange_map, build_exchange_suffix_map,
                                 fetch_fmp_exchange_tickers, fetch_ticker_sectors)
 except ImportError as _e:
     st.error(f"Cannot import canslim_module: {_e}\nMake sure canslim_module.py is in the repo root.")
@@ -123,8 +125,18 @@ if 'canslim_ticker_list' not in st.session_state:
     st.session_state['canslim_ticker_list'] = []
 
 # ── Country & Exchange ────────────────────────────────────────────────────
+# Load exchange map dynamically from FMP if key is available, else use static
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_canslim_exchange_map(api_key):
+    if not api_key:
+        return COUNTRY_EXCHANGES
+    raw = fetch_fmp_available_exchanges(api_key)
+    return build_country_exchange_map(raw) if raw else COUNTRY_EXCHANGES
+
+_country_exc_map = _load_canslim_exchange_map(fmp_key)
+
 _ALL_COUNTRIES = "🌍 ALL Countries"
-country_options = ["-- Select country --", _ALL_COUNTRIES] + sorted(COUNTRY_EXCHANGES.keys())
+country_options = ["-- Select country --", _ALL_COUNTRIES] + sorted(_country_exc_map.keys())
 selected_country = st.sidebar.selectbox("Country", country_options, key="canslim_country")
 
 selected_exchange_codes  = []
@@ -139,7 +151,7 @@ if _all_countries_selected:
     st.sidebar.caption("Full global stock list will be loaded (~90k tickers).")
 
 elif selected_country != "-- Select country --":
-    exchange_list   = COUNTRY_EXCHANGES[selected_country]
+    exchange_list   = _country_exc_map[selected_country]
     exchange_labels = [label for _, label in exchange_list]
     all_label       = f"ALL ({len(exchange_list)} exchanges)"
     selected_exchange_label = st.sidebar.selectbox(

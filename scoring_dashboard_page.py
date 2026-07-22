@@ -18,6 +18,8 @@ from scoring_module import score_universe, results_to_dataframe, score_stock
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 try:
     from canslim_module import (COUNTRY_EXCHANGES, EXCHANGE_SUFFIX,
+                                fetch_fmp_available_exchanges,
+                                build_country_exchange_map, build_exchange_suffix_map,
                                 fetch_fmp_exchange_tickers, fetch_ticker_sectors,
                                 fetch_price_data_fmp, fetch_price_universe_fmp,
                                 score_canslim_universe)
@@ -139,10 +141,20 @@ if not _fmp_module_ok:
 elif not fmp_key:
     st.sidebar.caption("⬆️ Enter an FMP API key above to use the Exchange Lookup.")
 else:
+    # ── Load exchange data from FMP (cached after first call) ─────────────
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _load_exchange_map(api_key):
+        raw = fetch_fmp_available_exchanges(api_key)
+        if raw:
+            return build_country_exchange_map(raw)
+        return COUNTRY_EXCHANGES  # static fallback
+
+    _country_exc_map = _load_exchange_map(fmp_key)
+
     # ── Country (multiselect with search) ────────────────────────────────
     _sel_countries = st.sidebar.multiselect(
         "Country",
-        options=sorted(COUNTRY_EXCHANGES.keys()),
+        options=sorted(_country_exc_map.keys()),
         key="ta_country",
         placeholder="Search and select countries…",
     )
@@ -154,7 +166,7 @@ else:
         # Build combined exchange list for all selected countries
         _all_exc_pairs = []
         for _c in _sel_countries:
-            _all_exc_pairs.extend(COUNTRY_EXCHANGES[_c])
+            _all_exc_pairs.extend(_country_exc_map[_c])
 
         # ── Exchange (multiselect with search) ────────────────────────────
         _exc_label_to_code = {lbl: code for code, lbl in _all_exc_pairs}
