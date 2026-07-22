@@ -653,50 +653,49 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
 
-    Uses /stable/stock-list (90k records, symbol + companyName) and
-    filters client-side by ticker suffix:
-      - Exchanges with a suffix (e.g. .SR, .CA): keep tickers ending with that suffix.
-      - US exchanges (no suffix): keep tickers that contain no dot.
+    Uses /stable/stock-screener?exchange=<code> (works on basic FMP plans).
+    The old /stable/stock-list endpoint requires a premium plan (returns 403).
 
     Raises RuntimeError with a diagnostic message on failure.
     """
-    try:
-        data = _fmp_get("stock-list", api_key, {})
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch FMP stock list: {e}")
+    def _screener_for(code):
+        fmp_code = FMP_EXCHANGE_CODE.get(code, code)
+        try:
+            rows = _fmp_get("stock-screener", api_key,
+                            {"exchange": fmp_code, "limit": 10000})
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to fetch tickers for exchange '{code}' "
+                f"(FMP code '{fmp_code}'): {e}"
+            )
+        if not rows or not isinstance(rows, list):
+            raise RuntimeError(
+                f"No tickers returned by FMP screener for exchange '{code}'."
+            )
+        return [
+            (r["symbol"], r.get("companyName") or r["symbol"])
+            for r in rows if r.get("symbol")
+        ]
 
-    if not data or not isinstance(data, list):
-        raise RuntimeError("FMP stock-list returned no data.")
-
-    # Special code: return the full global list with no filtering
     if exchange_code == "__ALL__":
-        matches = [
-            (r["symbol"], r.get("companyName") or r["symbol"])
-            for r in data if r.get("symbol")
-        ]
-        return sorted(matches, key=lambda x: x[0])[:limit]
+        # Pull from all known exchanges and deduplicate
+        seen = {}
+        for code in EXCHANGE_SUFFIX:
+            try:
+                for sym, name in _screener_for(code):
+                    if sym not in seen:
+                        seen[sym] = name
+            except RuntimeError:
+                pass  # Skip exchanges that fail; best-effort
+        if not seen:
+            raise RuntimeError("Could not load tickers from any exchange.")
+        return sorted(seen.items(), key=lambda x: x[0])[:limit]
 
-    suffix = EXCHANGE_SUFFIX.get(exchange_code, None)
-
-    if suffix:
-        # e.g. .SR for Saudi, .CA for Egypt, .DE for Germany
-        matches = [
-            (r["symbol"], r.get("companyName") or r["symbol"])
-            for r in data
-            if r.get("symbol", "").endswith(suffix)
-        ]
-    else:
-        # US / no-suffix exchanges — exclude any ticker that contains a dot
-        matches = [
-            (r["symbol"], r.get("companyName") or r["symbol"])
-            for r in data
-            if r.get("symbol") and "." not in r["symbol"]
-        ]
+    matches = _screener_for(exchange_code)
 
     if not matches:
         raise RuntimeError(
-            f"No tickers found for exchange '{exchange_code}' "
-            f"(suffix='{suffix or 'none'}') in FMP stock-list."
+            f"No tickers found for exchange '{exchange_code}' via FMP screener."
         )
 
     return sorted(matches, key=lambda x: x[0])[:limit]
