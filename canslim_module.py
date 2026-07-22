@@ -653,51 +653,75 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     Return available tickers for an exchange as a sorted list of
     (symbol, company_name) tuples.
 
-    Uses /stable/stock-screener?exchange=<code> (works on basic FMP plans).
-    The old /stable/stock-list endpoint requires a premium plan (returns 403).
+    Strategy (in order):
+      1. /stable/stock-screener?exchange=<fmp_code>  — works for US on basic plan
+      2. /stable/search?query=<suffix>               — fallback for exchanges with
+         a known dot-suffix (e.g. .SR for Saudi, .CA for Egypt); filters by suffix
+      3. RuntimeError with a user-friendly message
 
-    Raises RuntimeError with a diagnostic message on failure.
+    Raises RuntimeError if all attempts fail.
     """
     def _screener_for(code):
+        """Try screener; return list or empty list (never raises)."""
         fmp_code = FMP_EXCHANGE_CODE.get(code, code)
         try:
             rows = _fmp_get("stock-screener", api_key,
                             {"exchange": fmp_code, "limit": 10000})
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to fetch tickers for exchange '{code}' "
-                f"(FMP code '{fmp_code}'): {e}"
-            )
-        if not rows or not isinstance(rows, list):
-            raise RuntimeError(
-                f"No tickers returned by FMP screener for exchange '{code}'."
-            )
-        return [
-            (r["symbol"], r.get("companyName") or r["symbol"])
-            for r in rows if r.get("symbol")
-        ]
+            if rows and isinstance(rows, list):
+                return [(r["symbol"], r.get("companyName") or r["symbol"])
+                        for r in rows if r.get("symbol")]
+        except Exception:
+            pass
+        return []
+
+    def _search_for(suffix):
+        """Fallback: search by suffix string, filter results by that suffix."""
+        try:
+            rows = _fmp_get("search", api_key,
+                            {"query": suffix.lstrip("."), "limit": 1000})
+            if rows and isinstance(rows, list):
+                return [(r["symbol"], r.get("name") or r["symbol"])
+                        for r in rows
+                        if r.get("symbol", "").endswith(suffix)]
+        except Exception:
+            pass
+        return []
+
+    def _tickers_for(code):
+        suffix = EXCHANGE_SUFFIX.get(code, "")
+        # 1. screener
+        matches = _screener_for(code)
+        if matches:
+            return matches
+        # 2. search fallback (suffix-based exchanges only)
+        if suffix:
+            matches = _search_for(suffix)
+            if matches:
+                return matches
+        raise RuntimeError(
+            f"Could not load tickers for exchange '{code}'. "
+            f"Your FMP plan may not support this exchange via the API. "
+            f"Please enter ticker symbols manually instead."
+        )
 
     if exchange_code == "__ALL__":
-        # Pull from all known exchanges and deduplicate
         seen = {}
         for code in EXCHANGE_SUFFIX:
             try:
-                for sym, name in _screener_for(code):
+                for sym, name in _tickers_for(code):
                     if sym not in seen:
                         seen[sym] = name
             except RuntimeError:
-                pass  # Skip exchanges that fail; best-effort
+                pass
         if not seen:
-            raise RuntimeError("Could not load tickers from any exchange.")
+            raise RuntimeError(
+                "Could not load tickers from any exchange. "
+                "Your FMP plan may not support exchange screener access. "
+                "Please enter ticker symbols manually."
+            )
         return sorted(seen.items(), key=lambda x: x[0])[:limit]
 
-    matches = _screener_for(exchange_code)
-
-    if not matches:
-        raise RuntimeError(
-            f"No tickers found for exchange '{exchange_code}' via FMP screener."
-        )
-
+    matches = _tickers_for(exchange_code)
     return sorted(matches, key=lambda x: x[0])[:limit]
 
 
