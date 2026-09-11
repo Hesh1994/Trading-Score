@@ -891,6 +891,40 @@ def fetch_fmp_exchange_tickers(exchange_code, api_key, limit=5000):
     return sorted(matches, key=lambda x: x[0])[:limit]
 
 
+# Index-tracking ETF → FMP /stable constituents endpoint. Only indices FMP
+# exposes an actual constituent list for; anything else falls back to using
+# the ETF's own turnover as a proxy.
+INDEX_CONSTITUENT_ENDPOINTS = {
+    "SPY": "sp500-constituent",
+    "QQQ": "nasdaq-constituent",
+    "DIA": "dowjones-constituent",
+}
+
+
+def fetch_fmp_index_constituents(etf_ticker, api_key):
+    """
+    Real constituent symbols for an index, via FMP's /stable constituent
+    endpoints (currently S&P 500, Nasdaq 100, Dow 30 — keyed by the ETF that
+    proxies each index). Returns [] if the index has no known endpoint, or
+    if the request fails for any reason.
+    """
+    endpoint = INDEX_CONSTITUENT_ENDPOINTS.get(etf_ticker.upper())
+    if not endpoint:
+        return []
+    try:
+        rows = _fmp_get(endpoint, api_key)
+    except Exception:
+        return []
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for r in rows:
+        sym = r.get('symbol') if isinstance(r, dict) else None
+        if sym:
+            out.append(sym)
+    return out
+
+
 def _resolve_fmp_symbol(symbol, api_key):
     """
     Use FMP search to find the canonical symbol FMP uses for this ticker.

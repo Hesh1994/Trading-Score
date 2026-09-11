@@ -20,10 +20,12 @@ import plotly.graph_objects as go
 import relative_strength as rsm
 
 try:
-    from canslim_module import fetch_fmp_exchange_tickers
+    from canslim_module import (fetch_fmp_exchange_tickers, fetch_fmp_index_constituents,
+                                INDEX_CONSTITUENT_ENDPOINTS)
     _canslim_ok = True
 except ImportError:
     _canslim_ok = False
+    INDEX_CONSTITUENT_ENDPOINTS = {}
 
 st.set_page_config(
     page_title="Relative Strength",
@@ -149,23 +151,58 @@ bench_key = st.sidebar.selectbox(
     help="One benchmark drives the whole page — pick where its turnover comes from.",
 )
 
-_PROXY_NAMES = {
+_INDEX_ETF_NAME = {
     "spy": ("SPY", "S&P 500"), "qqq": ("QQQ", "Nasdaq 100"),
     "dia": ("DIA", "Dow 30"), "iwm": ("IWM", "Russell 2000"),
     "ksa": ("KSA", "Saudi TASI"),
 }
+if _auto_proxy:
+    _INDEX_ETF_NAME["auto_index"] = _auto_proxy
 
 bench_proxy = bench_members = bench_turnover_df = None
 bench_name = "Benchmark"
 is_proxy_mode = False
 
-if bench_key == "auto_index":
-    bench_proxy, bench_name = _auto_etf, _auto_name
-    is_proxy_mode = True
+if bench_key in _INDEX_ETF_NAME:
+    # Prefer the real index constituents (true "sum of the index's stocks'
+    # turnover") over the ETF proxy, when FMP exposes a constituent list for
+    # this index. Falls back to the ETF's own Close×Volume otherwise.
+    _idx_etf, bench_name = _INDEX_ETF_NAME[bench_key]
+    _idx_endpoint = INDEX_CONSTITUENT_ENDPOINTS.get(_idx_etf)
 
-elif bench_key in _PROXY_NAMES:
-    bench_proxy, bench_name = _PROXY_NAMES[bench_key]
-    is_proxy_mode = True
+    _idx_members = None
+    if _idx_endpoint:
+        _idx_cache_key = f"rs_index_constituents_{_idx_etf}"
+        if _idx_cache_key not in st.session_state and _canslim_ok and _fmp_key:
+            with st.spinner(f"Fetching {bench_name} constituents…"):
+                try:
+                    st.session_state[_idx_cache_key] = fetch_fmp_index_constituents(
+                        _idx_etf, _fmp_key)
+                except Exception:
+                    st.session_state[_idx_cache_key] = []
+        _idx_members = st.session_state.get(_idx_cache_key)
+
+    if _idx_members:
+        bench_members = _idx_members
+        st.sidebar.caption(f"Summing Close×Volume across {len(_idx_members)} real "
+                           f"{bench_name} constituents (via FMP).")
+        if st.sidebar.button("🔄 Refresh constituent list",
+                             key=f"rs_reload_idx_{_idx_etf}"):
+            st.session_state.pop(f"rs_index_constituents_{_idx_etf}", None)
+            st.rerun()
+    else:
+        bench_proxy = _idx_etf
+        is_proxy_mode = True
+        if _idx_endpoint and not _fmp_key:
+            st.sidebar.caption(f"Enter an FMP API key to sum real {bench_name} "
+                               f"constituents — using {_idx_etf} ETF turnover as a "
+                               "proxy for now.")
+        elif _idx_endpoint:
+            st.sidebar.caption(f"Could not fetch {bench_name} constituents — "
+                               f"using {_idx_etf} ETF turnover as a proxy.")
+        else:
+            st.sidebar.caption(f"No public constituent list available for {bench_name} — "
+                               f"using {_idx_etf} ETF turnover as a proxy.")
 
 elif bench_key == "group":
     bench_name = "My Screener Tickers"
@@ -529,10 +566,20 @@ turnover comes from. Depending on what's selected it reveals the matching
 follow-up input (a sector picker, a ticker box, a file uploader):
 
 - **🏛️ Auto index for your exchange** *(when you've picked a country/exchange
-  on the Scoring Dashboard)* — a liquid ETF that tracks that exchange's
-  market, chosen automatically (e.g. Tadawul → KSA, LSE → EWU, NASDAQ → QQQ).
+  on the Scoring Dashboard)* — the index tied to that exchange, chosen
+  automatically (e.g. Tadawul → KSA, LSE → EWU, NASDAQ → QQQ).
 - **📈 Major indices** — S&P 500 (SPY), Nasdaq 100 (QQQ), Dow 30 (DIA),
   Russell 2000 (IWM), Saudi TASI (KSA) — fixed presets regardless of exchange.
+
+  **Every index option sums the real constituent stocks' turnover when it
+  can.** For S&P 500, Nasdaq 100 and Dow 30, FMP publishes the actual
+  constituent list, so the app fetches it and sums `Close × Volume` across
+  every one of those stocks — a true "index turnover," not an ETF ratio.
+  For indices FMP doesn't expose constituents for (Russell 2000, Saudi
+  TASI, and most auto-detected exchange indices), it falls back to the
+  ETF's own turnover as a proxy, and a caption in the sidebar says so.
+  A "Refresh constituent list" button lets you re-pull the list if it's
+  gone stale.
 - **👥 My screener tickers** — the exact group of tickers you've built up on
   the Scoring Dashboard / CANSLIM pages, summed into one turnover series.
   Good for "how is this stock doing versus my own watchlist as a whole."
@@ -551,13 +598,14 @@ follow-up input (a sector picker, a ticker box, a file uploader):
   daily total turnover figure, upload it directly. This is the most accurate
   option since it isn't a proxy or an approximation from constituent data.
 
-An **ETF/index proxy** (auto index or a major index preset) is fastest, but
-the RS *level* is only a ratio to that ETF's own turnover — it is **not**
-the stock's true share of total market turnover, since an ETF trades a tiny
-fraction of its underlying index's volume. The **trend** (rising/falling)
-stays meaningful either way, and the app flags this with a caption whenever
-a proxy is in use. The **constituent-sum** options (screener group, sector,
-entire country market, custom list) give a true "share of turnover" reading
+An **ETF proxy fallback** (only used when real constituents aren't available,
+or no FMP key is entered) means the RS *level* is only a ratio to that ETF's
+own turnover — it is **not** the stock's true share of total market
+turnover, since an ETF trades a tiny fraction of its underlying index's
+volume. The **trend** (rising/falling) stays meaningful either way, and the
+app flags this with a caption whenever a proxy is in use. Every
+**constituent-sum** option (index constituents, screener group, sector,
+entire country market, custom list) gives a true "share of turnover" reading
 instead, at the cost of one download per constituent — a day is blanked out
 if fewer than 50% of constituents reported data, so an outage can't quietly
 deflate the benchmark.
