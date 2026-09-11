@@ -245,76 +245,169 @@ summary = st.session_state['rs_summary']
 ticker = st.session_state['rs_ticker']
 bench_col = next(c for c in table.columns if 'Trading Value' in c and c != 'Stock Trading Value')
 
+tab_results, tab_notes = st.tabs(["📊 Results", "📖 Notes: How RS Works"])
+
 # ── Metrics ───────────────────────────────────────────────────────────────────
 _rows = table.iloc[:-1]           # drop the Average RS summary row
 _avg_row = table.iloc[-1]
 
-_m1, _m2, _m3, _m4 = st.columns(4)
-_m1.metric(f"Average RS ({summary['interval']} periods)", f"{summary['average_rs']:.6f}")
-_m2.metric("Latest RS", f"{summary['last']:.6f}",
-           delta=f"{(summary['last'] - summary['average_rs']):+.6f} vs avg")
-_arrow = {"Up": "📈", "Down": "📉", "Flat": "➡️"}.get(summary['direction'], "❔")
-_m3.metric("Trend", f"{_arrow} {summary['direction']}",
-           delta=f"{summary['slope_pct_per_period']:+.2f}% / period")
-if summary.get('average_rs_cap_adjusted') is not None:
-    _m4.metric("Avg RS, cap-adjusted", f"{summary['average_rs_cap_adjusted']:.3f}",
-               help="1.0 = trades exactly in line with its index weight")
-else:
-    _m4.metric("Mean stock turnover", f"{_rows['Stock Trading Value'].mean():,.0f}")
+with tab_results:
+    _m1, _m2, _m3, _m4 = st.columns(4)
+    _m1.metric(f"Average RS ({summary['interval']} periods)", f"{summary['average_rs']:.6f}")
+    _m2.metric("Latest RS", f"{summary['last']:.6f}",
+               delta=f"{(summary['last'] - summary['average_rs']):+.6f} vs avg")
+    _arrow = {"Up": "📈", "Down": "📉", "Flat": "➡️"}.get(summary['direction'], "❔")
+    _m3.metric("Trend", f"{_arrow} {summary['direction']}",
+               delta=f"{summary['slope_pct_per_period']:+.2f}% / period")
+    if summary.get('average_rs_cap_adjusted') is not None:
+        _m4.metric("Avg RS, cap-adjusted", f"{summary['average_rs_cap_adjusted']:.3f}",
+                   help="1.0 = trades exactly in line with its index weight")
+    else:
+        _m4.metric("Mean stock turnover", f"{_rows['Stock Trading Value'].mean():,.0f}")
 
-st.caption(f"**{ticker}** vs **{summary['benchmark']}** — "
-           f"RS moved {summary['first']:.6f} → {summary['last']:.6f} over "
-           f"{summary['periods']} periods.")
+    st.caption(f"**{ticker}** vs **{summary['benchmark']}** — "
+               f"RS moved {summary['first']:.6f} → {summary['last']:.6f} over "
+               f"{summary['periods']} periods.")
 
-if bench_mode == "ETF proxy":
-    st.caption("⚠️ With an ETF proxy the RS *level* is a ratio to the ETF's own turnover, "
-               "not the stock's share of index turnover. The trend and relative "
-               "comparisons remain valid.")
+    if bench_mode == "ETF proxy":
+        st.caption("⚠️ With an ETF proxy the RS *level* is a ratio to the ETF's own turnover, "
+                   "not the stock's share of index turnover. The trend and relative "
+                   "comparisons remain valid.")
 
-# ── Chart ─────────────────────────────────────────────────────────────────────
-_fig = go.Figure()
-_fig.add_trace(go.Scatter(x=_rows['Date'], y=_rows['RS'], mode='lines+markers',
-                          name='RS', line=dict(width=2)))
-_fig.add_trace(go.Scatter(x=_rows['Date'],
-                          y=rsm.rolling_average_rs(_rows['RS'], summary['interval']),
-                          mode='lines', name=f"Rolling avg ({summary['interval']})",
-                          line=dict(width=2, dash='dot')))
-_fig.add_hline(y=summary['average_rs'], line_dash="dash", line_color="grey",
-               annotation_text=f"Average RS {summary['average_rs']:.6f}",
-               annotation_position="top left")
-_fig.update_layout(title=f"{ticker} Relative Strength vs {summary['benchmark']}",
-                   xaxis_title="Date", yaxis_title="RS (turnover share)",
-                   hovermode="x unified", height=430,
-                   legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                               xanchor="right", x=1))
-st.plotly_chart(_fig, use_container_width=True)
+    # ── Chart ─────────────────────────────────────────────────────────────────
+    _fig = go.Figure()
+    _fig.add_trace(go.Scatter(x=_rows['Date'], y=_rows['RS'], mode='lines+markers',
+                              name='RS', line=dict(width=2)))
+    _fig.add_trace(go.Scatter(x=_rows['Date'],
+                              y=rsm.rolling_average_rs(_rows['RS'], summary['interval']),
+                              mode='lines', name=f"Rolling avg ({summary['interval']})",
+                              line=dict(width=2, dash='dot')))
+    _fig.add_hline(y=summary['average_rs'], line_dash="dash", line_color="grey",
+                   annotation_text=f"Average RS {summary['average_rs']:.6f}",
+                   annotation_position="top left")
+    _fig.update_layout(title=f"{ticker} Relative Strength vs {summary['benchmark']}",
+                       xaxis_title="Date", yaxis_title="RS (turnover share)",
+                       hovermode="x unified", height=430,
+                       legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                   xanchor="right", x=1))
+    st.plotly_chart(_fig, use_container_width=True)
 
-# ── Turnover comparison ───────────────────────────────────────────────────────
-with st.expander("📊 Underlying trading values"):
-    _fig2 = go.Figure()
-    _fig2.add_trace(go.Bar(x=_rows['Date'], y=_rows['Stock Trading Value'],
-                           name=f"{ticker} turnover"))
-    _fig2.add_trace(go.Scatter(x=_rows['Date'], y=_rows[bench_col], mode='lines',
-                               name=f"{summary['benchmark']} turnover", yaxis='y2'))
-    _fig2.update_layout(height=360, hovermode="x unified",
-                        yaxis=dict(title=f"{ticker}"),
-                        yaxis2=dict(title=summary['benchmark'], overlaying='y',
-                                    side='right', showgrid=False),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                                    xanchor="right", x=1))
-    st.plotly_chart(_fig2, use_container_width=True)
+    # ── Turnover comparison ──────────────────────────────────────────────────
+    with st.expander("📊 Underlying trading values"):
+        _fig2 = go.Figure()
+        _fig2.add_trace(go.Bar(x=_rows['Date'], y=_rows['Stock Trading Value'],
+                               name=f"{ticker} turnover"))
+        _fig2.add_trace(go.Scatter(x=_rows['Date'], y=_rows[bench_col], mode='lines',
+                                   name=f"{summary['benchmark']} turnover", yaxis='y2'))
+        _fig2.update_layout(height=360, hovermode="x unified",
+                            yaxis=dict(title=f"{ticker}"),
+                            yaxis2=dict(title=summary['benchmark'], overlaying='y',
+                                        side='right', showgrid=False),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                        xanchor="right", x=1))
+        st.plotly_chart(_fig2, use_container_width=True)
 
-# ── Table ─────────────────────────────────────────────────────────────────────
-st.subheader("📋 RS Table")
-_display = rsm.format_rs_table(table).copy()
-_display['Date'] = _display['Date'].map(
-    lambda d: d.strftime('%Y-%m-%d') if isinstance(d, (pd.Timestamp, _dt.date)) else str(d))
-st.dataframe(_display, use_container_width=True, hide_index=True,
-             height=min(600, 38 * (len(_display) + 1)))
+    # ── Table ─────────────────────────────────────────────────────────────────
+    st.subheader("📋 RS Table")
+    _display = rsm.format_rs_table(table).copy()
+    _display['Date'] = _display['Date'].map(
+        lambda d: d.strftime('%Y-%m-%d') if isinstance(d, (pd.Timestamp, _dt.date)) else str(d))
+    st.dataframe(_display, use_container_width=True, hide_index=True,
+                 height=min(600, 38 * (len(_display) + 1)))
 
-st.download_button(
-    "⬇️ Download RS table (CSV)",
-    data=table.to_csv(index=False).encode('utf-8'),
-    file_name=f"RS_{ticker}_{summary['benchmark'].replace(' ', '_')}_{summary['interval']}p.csv",
-    mime="text/csv",
-)
+    st.download_button(
+        "⬇️ Download RS table (CSV)",
+        data=table.to_csv(index=False).encode('utf-8'),
+        file_name=f"RS_{ticker}_{summary['benchmark'].replace(' ', '_')}_{summary['interval']}p.csv",
+        mime="text/csv",
+    )
+
+# ── Notes tab ────────────────────────────────────────────────────────────────
+with tab_notes:
+    st.markdown(r"""
+### What this page measures
+
+This is **turnover-based Relative Strength (RS)** — not the classic "price ÷
+price" relative-strength line, and not the RSI oscillator. Instead of
+comparing how far a stock's *price* has moved versus a benchmark, it compares
+how much *money is trading hands* in the stock versus the benchmark:
+
+$$
+\text{RS}(t) = \frac{\text{Stock Trading Value}(t)}{\text{Benchmark Trading Value}(t)}
+$$
+
+where **Trading Value = Close × Volume** for each bar. This is a proxy for
+daily turnover (the exchange's own reported turnover, if you have it, is more
+accurate — see "Benchmark modes" below).
+
+The idea: a rising RS means the stock is capturing a growing *share of the
+market's money flow* relative to the benchmark, regardless of whether its
+price is up or down that day. It's a participation/liquidity signal, distinct
+from a price-momentum signal.
+
+### Step by step
+
+1. **Trading value** is computed per bar for the stock: `Close × Volume`.
+2. **Benchmark trading value** is computed the same way, using one of three
+   sources (below).
+3. **RS** is the ratio of the two, aligned on the dates both series share.
+   A benchmark value of zero (or a missing overlapping date) becomes blank
+   rather than an artificial spike.
+4. **Average RS** is the mean of RS over the last *N* periods you set as the
+   "Interval" — this is the single headline number on the page.
+5. **Trend** fits a straight line (ordinary least squares) through the RS
+   values in that window. The slope is expressed as a **% of the window's
+   mean RS per period**:
+   - **Up** — slope is at least +0.5% of mean RS per period
+   - **Down** — slope is at most −0.5% of mean RS per period
+   - **Flat** — anything in between
+
+### Benchmark modes (sidebar)
+
+- **ETF proxy** *(fastest)* — uses a single ETF (SPY, QQQ, DIA, IWM, KSA, or a
+  custom ticker) as a stand-in for the whole index's turnover. Quick, but the
+  RS *level* is only a ratio to that ETF's own turnover — it is **not** the
+  stock's true share of total index turnover, since an ETF trades a tiny
+  fraction of its underlying index's volume. The **trend** (rising/falling)
+  is still meaningful, and that's what the app flags with a caption when this
+  mode is used.
+- **Index constituents** — downloads every member ticker you list and sums
+  `Close × Volume` across all of them to build the true benchmark turnover.
+  This gives a real "share of index money flow" reading, but is slower
+  (one download per constituent) and a day is blanked out if fewer than 50%
+  of constituents reported data (`min_coverage`), so a data outage can't
+  quietly deflate the benchmark.
+- **Official turnover (paste/upload)** — if the exchange publishes its own
+  daily total turnover figure, upload it as a CSV (a date column + a value
+  column). This is the most accurate benchmark since it isn't a proxy or an
+  approximation from public constituent data.
+
+### Reading the numbers
+
+- **Average RS** — the headline metric; compare it over time or against other
+  stocks computed the same way (same benchmark mode, same interval).
+- **Latest RS vs average** — is the most recent reading above or below its
+  own recent norm?
+- **Trend arrow** — 📈 Up / 📉 Down / ➡️ Flat, from the slope test above.
+- **RS, cap-adjusted** *(optional)* — if you enter the stock's market cap and
+  the benchmark's total market cap, RS is divided by the stock's index
+  *weight* (`stock cap ÷ benchmark cap`). A value of **1.0** means the stock
+  trades exactly in proportion to its index weight; **above 1.0** means it's
+  attracting more turnover than its weight alone would suggest (disproportionate
+  interest); **below 1.0** means less.
+- **RS is a ratio, not a percentage or a price** — only compare RS values
+  computed with the *same benchmark and mode*; an RS of 0.05 against an ETF
+  proxy is not comparable to an RS of 0.05 against full index constituents.
+
+### Caveats
+
+- Turnover here is approximated as `Close × Volume`, not the exchange's
+  official value-traded figure, unless you use the "Official turnover" mode.
+- Corporate actions (splits, big single-day volume spikes from index
+  rebalances, etc.) can distort both the stock's and the benchmark's trading
+  value for that bar.
+- With very few overlapping dates (e.g. mismatched bar frequency or date
+  range between the stock and benchmark), the RS series and trend become
+  unreliable — the page requires at least one overlapping period beyond the
+  summary row to run at all.
+""")
