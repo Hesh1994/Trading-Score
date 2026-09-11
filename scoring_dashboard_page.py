@@ -150,6 +150,9 @@ else:
         return COUNTRY_EXCHANGES  # static fallback
 
     _country_exc_map = _load_exchange_map(fmp_key)
+    # Stable keys so other pages (e.g. Relative Strength) can reconstruct the
+    # full exchange list for a country without re-hitting FMP.
+    st.session_state['ta_country_exchange_map'] = _country_exc_map
 
     # ── Country (multiselect with search) ────────────────────────────────
     _sel_countries = st.sidebar.multiselect(
@@ -158,6 +161,7 @@ else:
         key="ta_country",
         placeholder="Search and select countries…",
     )
+    st.session_state['ta_selected_countries'] = _sel_countries
 
     _sel_exc_codes = []
     _sel_exc_label = None
@@ -183,6 +187,11 @@ else:
             # No exchange selected → use all exchanges for selected countries
             _sel_exc_codes = [code for code, _ in _all_exc_pairs]
             _sel_exc_label = f"All exchanges ({len(_sel_exc_codes)} selected)"
+
+        # Persist under stable keys so other pages (e.g. Relative Strength)
+        # can read the chosen exchange without redoing the FMP lookup.
+        st.session_state['ta_exchange_codes'] = _sel_exc_codes
+        st.session_state['ta_exchange_label'] = _sel_exc_label
 
     # ── Load Tickers ──────────────────────────────────────────────────────
     st.sidebar.markdown("**📋 Load Exchange Tickers**")
@@ -221,6 +230,8 @@ else:
         if _loaded:
             _tickers = st.session_state[_ck]
             st.sidebar.caption(f"{len(_tickers):,} tickers loaded from FMP")
+            # Stable keys for other pages (e.g. Relative Strength benchmark)
+            st.session_state['ta_exchange_all_tickers'] = _tickers
 
             # ── Load Sectors ──────────────────────────────────────────────
             if not _sloaded:
@@ -243,6 +254,7 @@ else:
 
             # ── Sector filter (multiselect) ────────────────────────────────
             _smap          = st.session_state.get(_sck, {})
+            st.session_state['ta_exchange_sector_map'] = _smap
             _avail_sectors = sorted({v for v in _smap.values() if v})
             _sec_choice    = st.sidebar.multiselect(
                 "🏭 Filter by Sector",

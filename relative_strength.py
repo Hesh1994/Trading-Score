@@ -18,6 +18,76 @@ import pandas as pd
 warnings.filterwarnings('ignore')
 
 
+# ------------------------------------------------------ exchange index proxy
+
+# Exchange code (as used by canslim_module.COUNTRY_EXCHANGES) → a liquid,
+# broad ETF whose Close x Volume approximates that exchange's major-index
+# turnover. Used to auto-suggest a benchmark for "the exchange I chose in
+# the scoring dashboard." Not exhaustive — exchanges with no reasonably
+# liquid single-country ETF are simply absent, and the RS page falls back to
+# other benchmark modes for those.
+EXCHANGE_INDEX_PROXY = {
+    # Americas
+    "NASDAQ": ("QQQ", "Nasdaq 100"),
+    "NYSE":   ("SPY", "S&P 500"),
+    "AMEX":   ("SPY", "S&P 500"),
+    "TSX":    ("EWC", "iShares MSCI Canada"),
+    "TSXV":   ("EWC", "iShares MSCI Canada"),
+    "BVMF":   ("EWZ", "iShares MSCI Brazil"),
+    "BMV":    ("EWW", "iShares MSCI Mexico"),
+    "BCS":    ("ECH", "iShares MSCI Chile"),
+    # Europe
+    "LSE":      ("EWU", "iShares MSCI United Kingdom"),
+    "ETR":      ("EWG", "iShares MSCI Germany"),
+    "FRA":      ("EWG", "iShares MSCI Germany"),
+    "EURONEXT": ("EWQ", "iShares MSCI France"),
+    "AMS":      ("EWN", "iShares MSCI Netherlands"),
+    "MIL":      ("EWI", "iShares MSCI Italy"),
+    "MCE":      ("EWP", "iShares MSCI Spain"),
+    "SIX":      ("EWL", "iShares MSCI Switzerland"),
+    "STO":      ("EWD", "iShares MSCI Sweden"),
+    "OSL":      ("NORW", "Global X MSCI Norway"),
+    "WSE":      ("EPOL", "iShares MSCI Poland"),
+    "IST":      ("TUR", "iShares MSCI Turkey"),
+    # Asia Pacific
+    "TYO":  ("EWJ", "iShares MSCI Japan"),
+    "SHH":  ("ASHR", "Xtrackers CSI 300 China A"),
+    "SHZ":  ("ASHR", "Xtrackers CSI 300 China A"),
+    "HKSE": ("EWH", "iShares MSCI Hong Kong"),
+    "KSC":  ("EWY", "iShares MSCI South Korea"),
+    "NSE":  ("INDA", "iShares MSCI India"),
+    "BSE":  ("INDA", "iShares MSCI India"),
+    "ASX":  ("EWA", "iShares MSCI Australia"),
+    "SES":  ("EWS", "iShares MSCI Singapore"),
+    "KLSE": ("EWM", "iShares MSCI Malaysia"),
+    "SET":  ("THD", "iShares MSCI Thailand"),
+    "IDX":  ("EIDO", "iShares MSCI Indonesia"),
+    "PSE":  ("EPHE", "iShares MSCI Philippines"),
+    "TAI":  ("EWT", "iShares MSCI Taiwan"),
+    "HOSE": ("VNM", "VanEck Vietnam"),
+    # Middle East
+    "SAU": ("KSA", "iShares MSCI Saudi Arabia"),
+    "ADX": ("UAE", "iShares MSCI UAE"),
+    "DFM": ("UAE", "iShares MSCI UAE"),
+    "QSE": ("QAT", "iShares MSCI Qatar"),
+    "TASE": ("EIS", "iShares MSCI Israel"),
+    # Africa
+    "EGX": ("EGPT", "VanEck Egypt Index"),
+    "JSE": ("EZA", "iShares MSCI South Africa"),
+}
+
+
+def exchange_index_proxy(exchange_codes):
+    """
+    Best matching (etf, display_name) for a list of exchange codes, or None
+    if none of them have a known proxy. Prefers the first code that matches.
+    """
+    for code in exchange_codes or []:
+        if code in EXCHANGE_INDEX_PROXY:
+            return EXCHANGE_INDEX_PROXY[code]
+    return None
+
+
 # ---------------------------------------------------------------- core math
 
 def trading_value(df, price_col='Close', volume_col='Volume'):

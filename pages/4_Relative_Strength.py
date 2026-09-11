@@ -19,6 +19,12 @@ import plotly.graph_objects as go
 
 import relative_strength as rsm
 
+try:
+    from canslim_module import fetch_fmp_exchange_tickers
+    _canslim_ok = True
+except ImportError:
+    _canslim_ok = False
+
 st.set_page_config(
     page_title="Relative Strength",
     page_icon="⚖️",
@@ -43,13 +49,34 @@ st.markdown('<hr style="border:none;border-top:3px solid black;margin-top:0;marg
 # ── Sidebar: configuration ────────────────────────────────────────────────────
 st.sidebar.header("⚙️ RS Configuration")
 
-# Pull tickers already loaded by the other dashboards, if any
+# Pull tickers, exchange selection, and sector map already loaded by the
+# scoring dashboard, if any.
 _known = list(dict.fromkeys(
     list(st.session_state.get('ta_ticker_list', [])) +
     list(st.session_state.get('canslim_ticker_list', []))
 ))
+_exch_codes  = list(st.session_state.get('ta_exchange_codes', []))
+_exch_label  = st.session_state.get('ta_exchange_label')
+_sector_map  = dict(st.session_state.get('ta_exchange_sector_map', {}))
+_avail_sectors = sorted({v for v in _sector_map.values() if v})
 
-st.sidebar.subheader("🎯 Stock")
+# Full country universe (every exchange in the chosen country/countries),
+# independent of any exchange sub-filter used for individual stock picking.
+_sel_countries    = list(st.session_state.get('ta_selected_countries', []))
+_country_exc_map  = dict(st.session_state.get('ta_country_exchange_map', {}))
+_fmp_key          = st.session_state.get('fmp_key_value', '')
+
+_country_codes = []
+for _c in _sel_countries:
+    for _code, _lbl in _country_exc_map.get(_c, []):
+        if _code not in _country_codes:
+            _country_codes.append(_code)
+_country_label      = ", ".join(_sel_countries) if _sel_countries else None
+_country_cache_key  = f"ta_tickers_{'_'.join(sorted(_country_codes))}" if _country_codes else None
+_country_tickers    = list(st.session_state.get(_country_cache_key, [])) if _country_cache_key else []
+
+# ── Stocks to analyse ───────────────────────────────────────────────────────
+st.sidebar.subheader("🎯 Stock(s)")
 if _known:
     _src = st.sidebar.radio("Ticker source", ["From screener", "Type manually"],
                             horizontal=True, key="rs_src")
@@ -57,9 +84,14 @@ else:
     _src = "Type manually"
 
 if _src == "From screener":
-    ticker = st.sidebar.selectbox("Ticker", _known, key="rs_ticker_sel")
+    tickers = st.sidebar.multiselect(
+        "Tickers (imported from the Scoring Dashboard)",
+        options=_known, default=_known, key="rs_ticker_ms",
+    )
 else:
-    ticker = st.sidebar.text_input("Ticker", value="AAPL", key="rs_ticker_txt").strip().upper()
+    _txt = st.sidebar.text_input("Ticker(s) — comma separated", value="AAPL",
+                                 key="rs_ticker_txt")
+    tickers = [t.strip().upper() for t in _txt.split(",") if t.strip()]
 
 st.sidebar.subheader("📅 Data Range")
 _c1, _c2 = st.sidebar.columns(2)
@@ -76,56 +108,126 @@ with _c2:
                              max_value=_dt.date.today(),
                              key="rs_end")
 
+# ── Benchmark — single selector ─────────────────────────────────────────────
 st.sidebar.subheader("🏛️ Benchmark")
-bench_mode = st.sidebar.selectbox(
+
+_auto_proxy = rsm.exchange_index_proxy(_exch_codes)
+
+_bench_options = []  # list of (key, label)
+if _auto_proxy:
+    _auto_etf, _auto_name = _auto_proxy
+    _bench_options.append(
+        ("auto_index", f"🏛️ {_auto_name} — auto index for {_exch_label} ({_auto_etf})"))
+
+_bench_options += [
+    ("spy", "📈 S&P 500 (SPY)"),
+    ("qqq", "📈 Nasdaq 100 (QQQ)"),
+    ("dia", "📈 Dow 30 (DIA)"),
+    ("iwm", "📈 Russell 2000 (IWM)"),
+    ("ksa", "📈 Saudi TASI (KSA)"),
+]
+if _known:
+    _bench_options.append(("group", f"👥 My screener tickers ({len(_known)})"))
+if _avail_sectors:
+    _bench_options.append(("sector", "🏭 Sector peers"))
+if _country_codes:
+    if _country_tickers:
+        _bench_options.append(
+            ("market", f"🌍 Entire {_country_label} market turnover ({len(_country_tickers):,} tickers)"))
+    else:
+        _bench_options.append(("market", f"🌍 Entire {_country_label} market turnover (tap to load)"))
+_bench_options.append(("custom_list", "✍️ Custom ticker list"))
+_bench_options.append(("upload", "📄 Official turnover (upload CSV)"))
+
+_bench_keys   = [k for k, _ in _bench_options]
+_bench_labels = {k: l for k, l in _bench_options}
+bench_key = st.sidebar.selectbox(
     "Benchmark trading value from",
-    ["ETF proxy", "Index constituents", "Official turnover (paste/upload)"],
-    key="rs_bench_mode",
-    help="ETF proxy is fastest but RS levels are only comparable to themselves. "
-         "Constituents or official turnover give a true participation share.",
+    options=_bench_keys,
+    format_func=lambda k: _bench_labels[k],
+    key="rs_bench_choice",
+    help="One benchmark drives the whole page — pick where its turnover comes from.",
 )
 
-bench_proxy = None
-bench_members = None
-bench_turnover_df = None
+_PROXY_NAMES = {
+    "spy": ("SPY", "S&P 500"), "qqq": ("QQQ", "Nasdaq 100"),
+    "dia": ("DIA", "Dow 30"), "iwm": ("IWM", "Russell 2000"),
+    "ksa": ("KSA", "Saudi TASI"),
+}
 
-if bench_mode == "ETF proxy":
-    _presets = {
-        "S&P 500 → SPY": ("SPY", "S&P 500"),
-        "Nasdaq 100 → QQQ": ("QQQ", "Nasdaq 100"),
-        "Dow 30 → DIA": ("DIA", "Dow 30"),
-        "Russell 2000 → IWM": ("IWM", "Russell 2000"),
-        "Saudi TASI → KSA": ("KSA", "Saudi TASI"),
-        "Custom ETF…": (None, None),
-    }
-    _choice = st.sidebar.selectbox("Index", list(_presets.keys()), key="rs_proxy_preset")
-    _p, _n = _presets[_choice]
-    if _p is None:
-        bench_proxy = st.sidebar.text_input("Proxy ETF ticker", value="SPY",
-                                            key="rs_proxy_custom").strip().upper()
-        bench_name = st.sidebar.text_input("Benchmark display name", value=bench_proxy,
-                                           key="rs_proxy_name").strip() or bench_proxy
+bench_proxy = bench_members = bench_turnover_df = None
+bench_name = "Benchmark"
+is_proxy_mode = False
+
+if bench_key == "auto_index":
+    bench_proxy, bench_name = _auto_etf, _auto_name
+    is_proxy_mode = True
+
+elif bench_key in _PROXY_NAMES:
+    bench_proxy, bench_name = _PROXY_NAMES[bench_key]
+    is_proxy_mode = True
+
+elif bench_key == "group":
+    bench_name = "My Screener Tickers"
+    bench_members = [t for t in _known if t not in tickers] or _known
+    st.sidebar.caption(f"{len(bench_members)} constituents from the Scoring Dashboard list — "
+                       "downloads one series per name.")
+
+elif bench_key == "sector":
+    _sector_choice = st.sidebar.selectbox("Sector", _avail_sectors, key="rs_sector_choice")
+    bench_name = f"{_sector_choice} Sector"
+    bench_members = [s for s, sec in _sector_map.items() if sec == _sector_choice]
+    st.sidebar.caption(f"{len(bench_members)} constituents in **{_sector_choice}** "
+                       f"(from {_exch_label or 'the loaded exchange'}).")
+
+elif bench_key == "market":
+    bench_name = f"{_country_label} Market"
+    if not _country_tickers:
+        st.sidebar.warning(f"Full {_country_label} universe not loaded yet.")
+        if not _canslim_ok:
+            st.sidebar.caption("canslim_module not available — can't load the country universe.")
+        elif not _fmp_key:
+            st.sidebar.caption("Enter an FMP API key on the Scoring Dashboard first.")
+        elif st.sidebar.button("📥 Load full country universe", key="rs_load_country_btn",
+                               use_container_width=True):
+            with st.spinner(f"Loading every listed ticker for {_country_label}…"):
+                _combined = {}
+                for _code in _country_codes:
+                    try:
+                        for _s, _n in fetch_fmp_exchange_tickers(_code, _fmp_key):
+                            _combined[_s] = _n
+                    except RuntimeError as _e:
+                        st.sidebar.error(f"{_code}: {_e}")
+                _country_tickers = sorted(_combined.items(), key=lambda x: x[0])
+                st.session_state[_country_cache_key] = _country_tickers
+            st.rerun()
+        bench_members = []
     else:
-        bench_proxy, bench_name = _p, _n
+        _max_n = st.sidebar.number_input(
+            "Max constituents (speed vs accuracy)", min_value=10,
+            max_value=max(10, len(_country_tickers)), value=min(300, len(_country_tickers)), step=10,
+            key="rs_market_cap_n",
+            help="Summing Close×Volume across every listed ticker in the country gives the "
+                 "truest market-turnover figure, but downloads one series per name.")
+        bench_members = [s for s, _ in _country_tickers[:int(_max_n)]]
+        st.sidebar.caption(f"Using {len(bench_members)} of {len(_country_tickers):,} listed "
+                           f"tickers across {_country_label}.")
+        if st.sidebar.button("🔄 Reload country universe", key="rs_reload_country_btn"):
+            st.session_state.pop(_country_cache_key, None)
+            st.rerun()
 
-elif bench_mode == "Index constituents":
+elif bench_key == "custom_list":
     bench_name = st.sidebar.text_input("Benchmark display name", value="Benchmark",
                                        key="rs_const_name").strip() or "Benchmark"
-    _use_screener = bool(_known) and st.sidebar.checkbox(
-        f"Use the {len(_known)} screener tickers as constituents",
-        value=False, key="rs_const_screener")
-    if _use_screener:
-        bench_members = _known
-    else:
-        _txt = st.sidebar.text_area("Constituents (comma or newline separated)",
-                                    value="AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA",
-                                    height=110, key="rs_const_txt")
-        bench_members = [t.strip().upper()
-                         for t in _txt.replace("\n", ",").split(",") if t.strip()]
-    st.sidebar.caption(f"{len(bench_members or [])} constituents — "
-                       "downloads one series per name, so large indexes are slow.")
+    _txt2 = st.sidebar.text_area("Constituents (comma or newline separated)",
+                                 value="AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA",
+                                 height=110, key="rs_const_txt")
+    bench_members = [t.strip().upper()
+                     for t in _txt2.replace("\n", ",").split(",") if t.strip()]
+    st.sidebar.caption(f"{len(bench_members)} constituents — "
+                       "downloads one series per name, so large lists are slow.")
 
-else:  # Official turnover
+else:  # upload
     bench_name = st.sidebar.text_input("Benchmark display name", value="Benchmark",
                                        key="rs_off_name").strip() or "Benchmark"
     _upload = st.sidebar.file_uploader(
@@ -149,7 +251,8 @@ st.sidebar.subheader("💰 Market Cap (optional)")
 _use_cap = st.sidebar.checkbox("Normalise RS by market-cap weight", value=False,
                                key="rs_use_cap",
                                help="RS ÷ (stock cap / index cap). 1.0 = trades exactly "
-                                    "in line with its index weight.")
+                                    "in line with its index weight. Applies to a single "
+                                    "drill-down ticker at a time when analysing several.")
 stock_cap = bench_cap = None
 if _use_cap:
     stock_cap = st.sidebar.number_input("Stock market cap", min_value=0.0,
@@ -170,44 +273,47 @@ def _fetch(tickers, start, end, bar):
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
-if not _run and 'rs_table' not in st.session_state:
-    st.info("Set the ticker, benchmark and interval in the sidebar, then press "
+if not _run and 'rs_tables' not in st.session_state:
+    st.info("Set the ticker(s), benchmark and interval in the sidebar, then press "
             "**Calculate RS**.")
     st.stop()
 
 if _run:
     try:
-        if not ticker:
-            st.error("Enter a ticker first.")
+        if not tickers:
+            st.error("Select or enter at least one ticker first.")
             st.stop()
 
-        with st.spinner(f"Downloading {ticker}…"):
-            stock_data = _fetch(ticker, start_date, end_date, bar_interval)
-        if ticker not in stock_data:
-            st.error(f"No data returned for {ticker} in that date range.")
+        with st.spinner(f"Downloading {len(tickers)} ticker(s)…"):
+            stock_data = _fetch(list(tickers), start_date, end_date, bar_interval)
+        if not stock_data:
+            st.error("No data returned for the selected ticker(s) in that date range.")
             st.stop()
+        _missing = [t for t in tickers if t not in stock_data]
+        if _missing:
+            st.warning(f"No data for: {', '.join(_missing)} — excluded.")
 
-        if bench_mode == "ETF proxy":
-            with st.spinner(f"Downloading {bench_proxy}…"):
+        if bench_proxy is not None:
+            with st.spinner(f"Downloading benchmark {bench_proxy}…"):
                 proxy_data = _fetch(bench_proxy, start_date, end_date, bar_interval)
             if bench_proxy not in proxy_data:
                 st.error(f"No data returned for benchmark proxy {bench_proxy}.")
                 st.stop()
             bench_value = rsm.benchmark_trading_value_from_proxy(proxy_data[bench_proxy])
 
-        elif bench_mode == "Index constituents":
+        elif bench_members is not None:
             if not bench_members:
-                st.error("Add at least one constituent ticker.")
+                st.error("The benchmark has no constituents — check the sidebar selection.")
                 st.stop()
-            with st.spinner(f"Downloading {len(bench_members)} constituents…"):
+            with st.spinner(f"Downloading {len(bench_members)} benchmark constituents…"):
                 members = _fetch(list(bench_members), start_date, end_date, bar_interval)
             if not members:
-                st.error("No constituent data returned.")
+                st.error("No constituent data returned for the benchmark.")
                 st.stop()
             if len(members) < len(bench_members):
                 st.warning(f"{len(bench_members) - len(members)} of "
-                           f"{len(bench_members)} constituents returned no data and "
-                           "were excluded from benchmark turnover.")
+                           f"{len(bench_members)} benchmark constituents returned no data "
+                           "and were excluded from benchmark turnover.")
             bench_value = rsm.benchmark_trading_value_from_constituents(
                 members, min_coverage=0.5)
 
@@ -217,41 +323,91 @@ if _run:
                 st.stop()
             bench_value = rsm.turnover_series_from_frame(bench_turnover_df)
 
-        table, summary = rsm.build_rs_table(
-            stock_data[ticker], bench_value,
-            benchmark_name=bench_name,
-            interval=int(interval),
-            stock_market_cap=stock_cap,
-            benchmark_market_cap=bench_cap,
-        )
+        rs_tables, rs_summaries = {}, {}
+        for _t in tickers:
+            if _t not in stock_data:
+                continue
+            _table, _summary = rsm.build_rs_table(
+                stock_data[_t], bench_value,
+                benchmark_name=bench_name,
+                interval=int(interval),
+                stock_market_cap=stock_cap,
+                benchmark_market_cap=bench_cap,
+            )
+            if len(_table) > 1:
+                rs_tables[_t] = _table
+                rs_summaries[_t] = _summary
 
-        if len(table) <= 1:
-            st.error("No overlapping dates between the stock and the benchmark. "
+        if not rs_tables:
+            st.error("No overlapping dates between the stock(s) and the benchmark. "
                      "Check the date range and bar frequency.")
             st.stop()
 
-        st.session_state['rs_table'] = table
-        st.session_state['rs_summary'] = summary
-        st.session_state['rs_ticker'] = ticker
-        # Share the average with the other dashboards
-        st.session_state.setdefault('rs_scores', {})[ticker] = summary['average_rs']
+        st.session_state['rs_tables'] = rs_tables
+        st.session_state['rs_summaries'] = rs_summaries
+        st.session_state['rs_tickers'] = list(rs_tables.keys())
+        st.session_state['rs_is_proxy_mode'] = is_proxy_mode
+        # Share the averages with the other dashboards
+        st.session_state.setdefault('rs_scores', {}).update(
+            {t: s['average_rs'] for t, s in rs_summaries.items()})
 
     except Exception as e:
         st.error(f"RS calculation failed: {e}")
         st.stop()
 
-table = st.session_state['rs_table']
-summary = st.session_state['rs_summary']
-ticker = st.session_state['rs_ticker']
-bench_col = next(c for c in table.columns if 'Trading Value' in c and c != 'Stock Trading Value')
+rs_tables = st.session_state['rs_tables']
+rs_summaries = st.session_state['rs_summaries']
+rs_tickers = st.session_state['rs_tickers']
+_is_proxy_mode = st.session_state.get('rs_is_proxy_mode', False)
 
 tab_results, tab_notes = st.tabs(["📊 Results", "📖 Notes: How RS Works"])
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
-_rows = table.iloc[:-1]           # drop the Average RS summary row
-_avg_row = table.iloc[-1]
-
 with tab_results:
+    _bench_display = next(iter(rs_summaries.values()))['benchmark']
+
+    # ── Multi-ticker summary ────────────────────────────────────────────────
+    if len(rs_tickers) > 1:
+        st.subheader(f"📋 RS Summary — {len(rs_tickers)} tickers vs {_bench_display}")
+        _summary_rows = []
+        for _t in rs_tickers:
+            _s = rs_summaries[_t]
+            _arrow = {"Up": "📈", "Down": "📉", "Flat": "➡️"}.get(_s['direction'], "❔")
+            _summary_rows.append({
+                'Ticker': _t,
+                'Average RS': _s['average_rs'],
+                'Latest RS': _s['last'],
+                'Trend': f"{_arrow} {_s['direction']}",
+                '% / period': _s['slope_pct_per_period'],
+            })
+        _summary_df = pd.DataFrame(_summary_rows).sort_values('Average RS', ascending=False)
+        st.dataframe(
+            _summary_df, use_container_width=True, hide_index=True,
+            column_config={
+                'Average RS': st.column_config.NumberColumn('Average RS', format="%.6f"),
+                'Latest RS':  st.column_config.NumberColumn('Latest RS', format="%.6f"),
+                '% / period': st.column_config.NumberColumn('% / period', format="%.2f%%"),
+            },
+        )
+        st.download_button(
+            "⬇️ Download RS summary (CSV)",
+            data=_summary_df.to_csv(index=False).encode('utf-8'),
+            file_name=f"RS_summary_{_bench_display.replace(' ', '_')}_{int(interval)}p.csv",
+            mime="text/csv",
+        )
+        st.markdown("---")
+        st.subheader("🔎 Drill-down")
+
+    ticker = st.selectbox("Ticker", rs_tickers, key="rs_drill_ticker") \
+        if len(rs_tickers) > 1 else rs_tickers[0]
+
+    table = rs_tables[ticker]
+    summary = rs_summaries[ticker]
+    bench_col = next(c for c in table.columns if 'Trading Value' in c and c != 'Stock Trading Value')
+
+    # ── Metrics ───────────────────────────────────────────────────────────
+    _rows = table.iloc[:-1]           # drop the Average RS summary row
+    _avg_row = table.iloc[-1]
+
     _m1, _m2, _m3, _m4 = st.columns(4)
     _m1.metric(f"Average RS ({summary['interval']} periods)", f"{summary['average_rs']:.6f}")
     _m2.metric("Latest RS", f"{summary['last']:.6f}",
@@ -269,12 +425,12 @@ with tab_results:
                f"RS moved {summary['first']:.6f} → {summary['last']:.6f} over "
                f"{summary['periods']} periods.")
 
-    if bench_mode == "ETF proxy":
-        st.caption("⚠️ With an ETF proxy the RS *level* is a ratio to the ETF's own turnover, "
-                   "not the stock's share of index turnover. The trend and relative "
-                   "comparisons remain valid.")
+    if _is_proxy_mode:
+        st.caption("⚠️ With an ETF/index proxy the RS *level* is a ratio to the proxy's own "
+                   "turnover, not the stock's share of index turnover. The trend and "
+                   "relative comparisons remain valid.")
 
-    # ── Chart ─────────────────────────────────────────────────────────────────
+    # ── Chart ─────────────────────────────────────────────────────────────
     _fig = go.Figure()
     _fig.add_trace(go.Scatter(x=_rows['Date'], y=_rows['RS'], mode='lines+markers',
                               name='RS', line=dict(width=2)))
@@ -292,7 +448,7 @@ with tab_results:
                                    xanchor="right", x=1))
     st.plotly_chart(_fig, use_container_width=True)
 
-    # ── Turnover comparison ──────────────────────────────────────────────────
+    # ── Turnover comparison ──────────────────────────────────────────────
     with st.expander("📊 Underlying trading values"):
         _fig2 = go.Figure()
         _fig2.add_trace(go.Bar(x=_rows['Date'], y=_rows['Stock Trading Value'],
@@ -307,7 +463,7 @@ with tab_results:
                                         xanchor="right", x=1))
         st.plotly_chart(_fig2, use_container_width=True)
 
-    # ── Table ─────────────────────────────────────────────────────────────────
+    # ── Table ─────────────────────────────────────────────────────────────
     st.subheader("📋 RS Table")
     _display = rsm.format_rs_table(table).copy()
     _display['Date'] = _display['Date'].map(
@@ -338,7 +494,7 @@ $$
 
 where **Trading Value = Close × Volume** for each bar. This is a proxy for
 daily turnover (the exchange's own reported turnover, if you have it, is more
-accurate — see "Benchmark modes" below).
+accurate — see "Benchmark options" below).
 
 The idea: a rising RS means the stock is capturing a growing *share of the
 market's money flow* relative to the benchmark, regardless of whether its
@@ -347,67 +503,94 @@ from a price-momentum signal.
 
 ### Step by step
 
-1. **Trading value** is computed per bar for the stock: `Close × Volume`.
-2. **Benchmark trading value** is computed the same way, using one of three
-   sources (below).
-3. **RS** is the ratio of the two, aligned on the dates both series share.
+1. **Stock(s)** — pick one or more tickers, imported straight from the
+   Scoring Dashboard's ticker list (or type your own). Every ticker you pick
+   is scored against the **same benchmark**, so they're directly comparable.
+2. **Trading value** is computed per bar for each stock: `Close × Volume`.
+3. **Benchmark trading value** is computed the same way, using whichever
+   single benchmark option you picked in the sidebar (below).
+4. **RS** is the ratio of the two, aligned on the dates both series share.
    A benchmark value of zero (or a missing overlapping date) becomes blank
    rather than an artificial spike.
-4. **Average RS** is the mean of RS over the last *N* periods you set as the
-   "Interval" — this is the single headline number on the page.
-5. **Trend** fits a straight line (ordinary least squares) through the RS
+5. **Average RS** is the mean of RS over the last *N* periods you set as the
+   "Interval" — this is the headline number for each ticker, and with
+   multiple tickers selected it drives the ranked summary table at the top.
+6. **Trend** fits a straight line (ordinary least squares) through the RS
    values in that window. The slope is expressed as a **% of the window's
    mean RS per period**:
    - **Up** — slope is at least +0.5% of mean RS per period
    - **Down** — slope is at most −0.5% of mean RS per period
    - **Flat** — anything in between
 
-### Benchmark modes (sidebar)
+### Benchmark — one selector, several sources
 
-- **ETF proxy** *(fastest)* — uses a single ETF (SPY, QQQ, DIA, IWM, KSA, or a
-  custom ticker) as a stand-in for the whole index's turnover. Quick, but the
-  RS *level* is only a ratio to that ETF's own turnover — it is **not** the
-  stock's true share of total index turnover, since an ETF trades a tiny
-  fraction of its underlying index's volume. The **trend** (rising/falling)
-  is still meaningful, and that's what the app flags with a caption when this
-  mode is used.
-- **Index constituents** — downloads every member ticker you list and sums
-  `Close × Volume` across all of them to build the true benchmark turnover.
-  This gives a real "share of index money flow" reading, but is slower
-  (one download per constituent) and a day is blanked out if fewer than 50%
-  of constituents reported data (`min_coverage`), so a data outage can't
-  quietly deflate the benchmark.
-- **Official turnover (paste/upload)** — if the exchange publishes its own
-  daily total turnover figure, upload it as a CSV (a date column + a value
-  column). This is the most accurate benchmark since it isn't a proxy or an
-  approximation from public constituent data.
+The **Benchmark** dropdown in the sidebar is the single control for where
+turnover comes from. Depending on what's selected it reveals the matching
+follow-up input (a sector picker, a ticker box, a file uploader):
+
+- **🏛️ Auto index for your exchange** *(when you've picked a country/exchange
+  on the Scoring Dashboard)* — a liquid ETF that tracks that exchange's
+  market, chosen automatically (e.g. Tadawul → KSA, LSE → EWU, NASDAQ → QQQ).
+- **📈 Major indices** — S&P 500 (SPY), Nasdaq 100 (QQQ), Dow 30 (DIA),
+  Russell 2000 (IWM), Saudi TASI (KSA) — fixed presets regardless of exchange.
+- **👥 My screener tickers** — the exact group of tickers you've built up on
+  the Scoring Dashboard / CANSLIM pages, summed into one turnover series.
+  Good for "how is this stock doing versus my own watchlist as a whole."
+- **🏭 Sector peers** — every ticker sharing the chosen sector (from the
+  sector classification loaded on the Scoring Dashboard), summed together.
+- **🌍 Entire country market turnover** — sums `Close × Volume` across every
+  ticker listed on *every* exchange of the country (or countries) you chose
+  on the Scoring Dashboard, regardless of any exchange sub-filter used there
+  for picking individual stocks — the full national universe. The first time
+  you select it, a **Load full country universe** button fetches the list
+  via FMP; after that it's cached for reuse. A "Max constituents" control
+  caps how many names get downloaded, trading accuracy for speed.
+- **✍️ Custom ticker list** — paste any comma/newline-separated list of
+  symbols to build a bespoke peer group.
+- **📄 Official turnover (upload CSV)** — if the exchange publishes its own
+  daily total turnover figure, upload it directly. This is the most accurate
+  option since it isn't a proxy or an approximation from constituent data.
+
+An **ETF/index proxy** (auto index or a major index preset) is fastest, but
+the RS *level* is only a ratio to that ETF's own turnover — it is **not**
+the stock's true share of total market turnover, since an ETF trades a tiny
+fraction of its underlying index's volume. The **trend** (rising/falling)
+stays meaningful either way, and the app flags this with a caption whenever
+a proxy is in use. The **constituent-sum** options (screener group, sector,
+entire country market, custom list) give a true "share of turnover" reading
+instead, at the cost of one download per constituent — a day is blanked out
+if fewer than 50% of constituents reported data, so an outage can't quietly
+deflate the benchmark.
 
 ### Reading the numbers
 
-- **Average RS** — the headline metric; compare it over time or against other
-  stocks computed the same way (same benchmark mode, same interval).
+- **RS Summary table** *(with multiple tickers)* — every selected ticker
+  ranked by Average RS against the one benchmark, so you can see at a glance
+  which stocks are capturing the most (or least) relative turnover, and
+  whether each is trending up or down.
+- **Average RS** — the headline metric per ticker; only compare it across
+  tickers computed with the *same benchmark*.
 - **Latest RS vs average** — is the most recent reading above or below its
   own recent norm?
 - **Trend arrow** — 📈 Up / 📉 Down / ➡️ Flat, from the slope test above.
-- **RS, cap-adjusted** *(optional)* — if you enter the stock's market cap and
-  the benchmark's total market cap, RS is divided by the stock's index
-  *weight* (`stock cap ÷ benchmark cap`). A value of **1.0** means the stock
-  trades exactly in proportion to its index weight; **above 1.0** means it's
-  attracting more turnover than its weight alone would suggest (disproportionate
-  interest); **below 1.0** means less.
+- **RS, cap-adjusted** *(optional, drill-down ticker only)* — enter the
+  stock's market cap and the benchmark's total market cap to divide RS by
+  the stock's index *weight* (`stock cap ÷ benchmark cap`). **1.0** means the
+  stock trades exactly in proportion to its index weight; **above 1.0** means
+  disproportionate interest; **below 1.0** means less.
 - **RS is a ratio, not a percentage or a price** — only compare RS values
-  computed with the *same benchmark and mode*; an RS of 0.05 against an ETF
-  proxy is not comparable to an RS of 0.05 against full index constituents.
+  computed with the *same benchmark*; an RS of 0.05 against an ETF proxy is
+  not comparable to an RS of 0.05 against a full sector sum.
 
 ### Caveats
 
 - Turnover here is approximated as `Close × Volume`, not the exchange's
-  official value-traded figure, unless you use the "Official turnover" mode.
+  official value-traded figure, unless you use the "Official turnover" option.
 - Corporate actions (splits, big single-day volume spikes from index
   rebalances, etc.) can distort both the stock's and the benchmark's trading
   value for that bar.
 - With very few overlapping dates (e.g. mismatched bar frequency or date
   range between the stock and benchmark), the RS series and trend become
-  unreliable — the page requires at least one overlapping period beyond the
-  summary row to run at all.
+  unreliable — each ticker needs at least one overlapping period beyond the
+  summary row to be included at all.
 """)
