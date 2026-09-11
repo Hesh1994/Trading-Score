@@ -21,7 +21,9 @@ import relative_strength as rsm
 
 try:
     from canslim_module import (fetch_fmp_exchange_tickers, fetch_fmp_index_constituents,
-                                INDEX_CONSTITUENT_ENDPOINTS)
+                                INDEX_CONSTITUENT_ENDPOINTS, fetch_fmp_available_exchanges,
+                                build_country_exchange_map, fetch_ticker_sectors,
+                                COUNTRY_EXCHANGES)
     _canslim_ok = True
 except ImportError:
     _canslim_ok = False
@@ -51,17 +53,14 @@ st.markdown('<hr style="border:none;border-top:3px solid black;margin-top:0;marg
 # ── Sidebar: configuration ────────────────────────────────────────────────────
 st.sidebar.header("⚙️ RS Configuration")
 
-# Pull tickers, exchange selection, and sector map already loaded by the
-# scoring dashboard, if any.
+# Pull tickers and exchange selection already loaded by the scoring
+# dashboard, if any.
 _known = list(dict.fromkeys(
     list(st.session_state.get('ta_ticker_list', [])) +
     list(st.session_state.get('canslim_ticker_list', []))
 ))
 _exch_codes  = list(st.session_state.get('ta_exchange_codes', []))
 _exch_label  = st.session_state.get('ta_exchange_label')
-_sector_map  = dict(st.session_state.get('ta_exchange_sector_map', {}))
-_avail_sectors = sorted({v for v in _sector_map.values() if v})
-
 # Full country universe (every exchange in the chosen country/countries),
 # independent of any exchange sub-filter used for individual stock picking.
 _sel_countries    = list(st.session_state.get('ta_selected_countries', []))
@@ -130,15 +129,13 @@ _bench_options += [
 ]
 if _known:
     _bench_options.append(("group", f"👥 My screener tickers ({len(_known)})"))
-if _avail_sectors:
-    _bench_options.append(("sector", "🏭 Sector peers"))
+_bench_options.append(("finder", "🔎 Ticker Finder (custom)"))
 if _country_codes:
     if _country_tickers:
         _bench_options.append(
             ("market", f"🌍 Entire {_country_label} market turnover ({len(_country_tickers):,} tickers)"))
     else:
         _bench_options.append(("market", f"🌍 Entire {_country_label} market turnover (tap to load)"))
-_bench_options.append(("custom_list", "✍️ Custom ticker list"))
 _bench_options.append(("upload", "📄 Official turnover (upload CSV)"))
 
 _bench_keys   = [k for k, _ in _bench_options]
@@ -210,12 +207,157 @@ elif bench_key == "group":
     st.sidebar.caption(f"{len(bench_members)} constituents from the Scoring Dashboard list — "
                        "downloads one series per name.")
 
-elif bench_key == "sector":
-    _sector_choice = st.sidebar.selectbox("Sector", _avail_sectors, key="rs_sector_choice")
-    bench_name = f"{_sector_choice} Sector"
-    bench_members = [s for s, sec in _sector_map.items() if sec == _sector_choice]
-    st.sidebar.caption(f"{len(bench_members)} constituents in **{_sector_choice}** "
-                       f"(from {_exch_label or 'the loaded exchange'}).")
+elif bench_key == "finder":
+    # Exact replica of the Scoring Dashboard's "Ticker Finder": Country →
+    # Exchange → Load Tickers → Load Sectors → Sector filter → ticker
+    # multiselect with Add Selected / Add All. Builds a standalone
+    # constituent list for the benchmark, sharing the same FMP ticker/sector
+    # caches as the Scoring Dashboard so nothing is fetched twice.
+    bench_name = st.sidebar.text_input("Benchmark display name", value="Custom Benchmark",
+                                       key="rs_finder_bench_name").strip() or "Custom Benchmark"
+
+    if 'rs_bench_ticker_list' not in st.session_state:
+        st.session_state['rs_bench_ticker_list'] = []
+
+    if not _canslim_ok:
+        st.sidebar.warning("canslim_module not found — Ticker Finder unavailable.")
+    elif not _fmp_key:
+        st.sidebar.caption("⬆️ Enter an FMP API key (on the Scoring Dashboard) to use the Ticker Finder.")
+    else:
+        @st.cache_data(ttl=3600, show_spinner=False)
+        def _rs_load_exchange_map(api_key):
+            raw = fetch_fmp_available_exchanges(api_key)
+            if raw:
+                return build_country_exchange_map(raw)
+            return COUNTRY_EXCHANGES
+
+        _fc_map = _rs_load_exchange_map(_fmp_key)
+
+        _fc_countries = st.sidebar.multiselect(
+            "Country", options=sorted(_fc_map.keys()), key="rs_finder_country",
+            placeholder="Search and select countries…",
+        )
+
+        _fc_exc_codes = []
+        _fc_exc_label = None
+        if _fc_countries:
+            _fc_pairs = []
+            for _c in _fc_countries:
+                _fc_pairs.extend(_fc_map[_c])
+            _fc_label_to_code = {lbl: code for code, lbl in _fc_pairs}
+            _fc_sel_labels = st.sidebar.multiselect(
+                "Exchange", options=list(_fc_label_to_code.keys()), key="rs_finder_exchange",
+                placeholder="All exchanges (leave empty for all)…",
+            )
+            if _fc_sel_labels:
+                _fc_exc_codes = [_fc_label_to_code[l] for l in _fc_sel_labels]
+                _fc_exc_label = ", ".join(_fc_sel_labels)
+            else:
+                _fc_exc_codes = [code for code, _ in _fc_pairs]
+                _fc_exc_label = f"All exchanges ({len(_fc_exc_codes)} selected)"
+
+        st.sidebar.markdown("**📋 Load Exchange Tickers**")
+        if not _fc_exc_codes:
+            st.sidebar.caption("⬆️ Select a country above first.")
+        else:
+            _fc_ck  = f"ta_tickers_{'_'.join(sorted(_fc_exc_codes))}"
+            _fc_sck = f"ta_sectors_{'_'.join(sorted(_fc_exc_codes))}"
+            _fc_loaded  = bool(st.session_state.get(_fc_ck))
+            _fc_sloaded = bool(st.session_state.get(_fc_sck))
+
+            _flc, _frc = st.sidebar.columns(2)
+            if _flc.button("📋 Load Tickers", key="rs_finder_load_btn",
+                           use_container_width=True, disabled=_fc_loaded):
+                with st.spinner(f"Loading tickers for {_fc_exc_label}…"):
+                    try:
+                        if _fc_exc_codes == ["__ALL__"]:
+                            _fc_tickers = fetch_fmp_exchange_tickers("__ALL__", _fmp_key)
+                        else:
+                            _fc_combined = {}
+                            for _c in _fc_exc_codes:
+                                for _s, _n in fetch_fmp_exchange_tickers(_c, _fmp_key):
+                                    _fc_combined[_s] = _n
+                            _fc_tickers = sorted(_fc_combined.items(), key=lambda x: x[0])
+                        st.session_state[_fc_ck] = _fc_tickers
+                        st.rerun()
+                    except RuntimeError as _e:
+                        st.sidebar.error(str(_e))
+            if _frc.button("🔄 Reload", key="rs_finder_reload_btn",
+                           use_container_width=True, disabled=not _fc_loaded):
+                st.session_state.pop(_fc_ck, None)
+                st.session_state.pop(_fc_sck, None)
+                st.rerun()
+
+            if _fc_loaded:
+                _fc_tickers = st.session_state[_fc_ck]
+                st.sidebar.caption(f"{len(_fc_tickers):,} tickers loaded from FMP")
+
+                if not _fc_sloaded:
+                    if st.sidebar.button("🏭 Load Sectors", key="rs_finder_load_sectors_btn",
+                                          use_container_width=True):
+                        _fc_syms = [s for s, _ in _fc_tickers]
+                        _fc_pb = st.sidebar.progress(0, text="Fetching sectors…")
+                        _fc_pt = st.sidebar.empty()
+                        def _fc_pcb(done, total):
+                            _fc_pb.progress(done / total, text=f"Sectors: {done}/{total}")
+                            _fc_pt.caption(f"{done}/{total} processed")
+                        _fc_smap = fetch_ticker_sectors(_fc_syms, _fmp_key, progress_cb=_fc_pcb)
+                        _fc_pb.empty(); _fc_pt.empty()
+                        st.session_state[_fc_sck] = _fc_smap
+                        st.rerun()
+                else:
+                    _fc_smap = st.session_state.get(_fc_sck, {})
+                    _fc_filled = sum(1 for v in _fc_smap.values() if v)
+                    st.sidebar.caption(f"Sectors: {_fc_filled:,} / {len(_fc_smap):,} classified")
+
+                _fc_smap = st.session_state.get(_fc_sck, {})
+                _fc_avail_sectors = sorted({v for v in _fc_smap.values() if v})
+                _fc_sec_choice = st.sidebar.multiselect(
+                    "🏭 Filter by Sector", options=_fc_avail_sectors,
+                    key="rs_finder_sector_filter", placeholder="All sectors (no filter)",
+                )
+                _fc_in_sec = (
+                    _fc_tickers if (not _fc_sec_choice or not _fc_smap)
+                    else [(s, n) for s, n in _fc_tickers if _fc_smap.get(s, "") in set(_fc_sec_choice)]
+                )
+
+                _fc_opts = [f"{s}  —  {n}" for s, n in _fc_in_sec[:1000]]
+                _fc_chosen = st.sidebar.multiselect(
+                    f"Select ticker ({len(_fc_in_sec):,} available)", options=_fc_opts,
+                    key="rs_finder_ticker_select", placeholder="Search and select tickers…",
+                )
+                _fb1, _fb2 = st.sidebar.columns(2)
+                if _fb1.button("➕ Add Selected", key="rs_finder_add_btn",
+                              use_container_width=True, disabled=not _fc_chosen):
+                    _fc_before = len(st.session_state['rs_bench_ticker_list'])
+                    for _lbl in _fc_chosen:
+                        _sym = _lbl.split("  —  ")[0].strip()
+                        if _sym not in st.session_state['rs_bench_ticker_list']:
+                            st.session_state['rs_bench_ticker_list'].append(_sym)
+                    _fc_added = len(st.session_state['rs_bench_ticker_list']) - _fc_before
+                    st.session_state.pop("rs_finder_ticker_select", None)
+                    st.sidebar.success(f"Added {_fc_added} ticker(s)")
+                    st.rerun()
+                if _fb2.button("➕ Add All", key="rs_finder_add_all_btn",
+                              use_container_width=True):
+                    _fc_before = len(st.session_state['rs_bench_ticker_list'])
+                    for _s, _ in _fc_in_sec:
+                        if _s not in st.session_state['rs_bench_ticker_list']:
+                            st.session_state['rs_bench_ticker_list'].append(_s)
+                    _fc_added = len(st.session_state['rs_bench_ticker_list']) - _fc_before
+                    st.sidebar.success(f"Added {_fc_added} ticker(s)")
+                    st.rerun()
+            else:
+                st.sidebar.caption("Click **Load Tickers** to browse listed stocks.")
+
+    if st.session_state['rs_bench_ticker_list']:
+        st.sidebar.caption(
+            f"**{len(st.session_state['rs_bench_ticker_list'])} ticker(s) in benchmark**")
+        if st.sidebar.button("🗑️ Clear benchmark list", key="rs_finder_clear_btn"):
+            st.session_state['rs_bench_ticker_list'] = []
+            st.rerun()
+
+    bench_members = list(st.session_state['rs_bench_ticker_list'])
 
 elif bench_key == "market":
     bench_name = f"{_country_label} Market"
@@ -252,17 +394,6 @@ elif bench_key == "market":
         if st.sidebar.button("🔄 Reload country universe", key="rs_reload_country_btn"):
             st.session_state.pop(_country_cache_key, None)
             st.rerun()
-
-elif bench_key == "custom_list":
-    bench_name = st.sidebar.text_input("Benchmark display name", value="Benchmark",
-                                       key="rs_const_name").strip() or "Benchmark"
-    _txt2 = st.sidebar.text_area("Constituents (comma or newline separated)",
-                                 value="AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA",
-                                 height=110, key="rs_const_txt")
-    bench_members = [t.strip().upper()
-                     for t in _txt2.replace("\n", ",").split(",") if t.strip()]
-    st.sidebar.caption(f"{len(bench_members)} constituents — "
-                       "downloads one series per name, so large lists are slow.")
 
 else:  # upload
     bench_name = st.sidebar.text_input("Benchmark display name", value="Benchmark",
@@ -583,8 +714,15 @@ follow-up input (a sector picker, a ticker box, a file uploader):
 - **👥 My screener tickers** — the exact group of tickers you've built up on
   the Scoring Dashboard / CANSLIM pages, summed into one turnover series.
   Good for "how is this stock doing versus my own watchlist as a whole."
-- **🏭 Sector peers** — every ticker sharing the chosen sector (from the
-  sector classification loaded on the Scoring Dashboard), summed together.
+- **🔎 Ticker Finder (custom)** — the *exact same* Country → Exchange →
+  Load Tickers → Load Sectors → Sector filter → ticker search-and-select
+  flow as the Scoring Dashboard's Ticker Finder, reproduced here as a
+  standalone benchmark builder. Pick any country/exchange, optionally
+  narrow by sector, then **Add Selected** or **Add All** to build up the
+  benchmark's constituent list — independent of whatever's chosen on the
+  Scoring Dashboard, and sharing its FMP ticker/sector caches so nothing
+  gets fetched twice. Use it to benchmark against, say, "every Materials
+  stock on Tadawul" or a hand-picked custom peer group.
 - **🌍 Entire country market turnover** — sums `Close × Volume` across every
   ticker listed on *every* exchange of the country (or countries) you chose
   on the Scoring Dashboard, regardless of any exchange sub-filter used there
@@ -592,8 +730,6 @@ follow-up input (a sector picker, a ticker box, a file uploader):
   you select it, a **Load full country universe** button fetches the list
   via FMP; after that it's cached for reuse. A "Max constituents" control
   caps how many names get downloaded, trading accuracy for speed.
-- **✍️ Custom ticker list** — paste any comma/newline-separated list of
-  symbols to build a bespoke peer group.
 - **📄 Official turnover (upload CSV)** — if the exchange publishes its own
   daily total turnover figure, upload it directly. This is the most accurate
   option since it isn't a proxy or an approximation from constituent data.
@@ -604,8 +740,8 @@ own turnover — it is **not** the stock's true share of total market
 turnover, since an ETF trades a tiny fraction of its underlying index's
 volume. The **trend** (rising/falling) stays meaningful either way, and the
 app flags this with a caption whenever a proxy is in use. Every
-**constituent-sum** option (index constituents, screener group, sector,
-entire country market, custom list) gives a true "share of turnover" reading
+**constituent-sum** option (index constituents, screener group, Ticker
+Finder, entire country market) gives a true "share of turnover" reading
 instead, at the cost of one download per constituent — a day is blanked out
 if fewer than 50% of constituents reported data, so an outage can't quietly
 deflate the benchmark.
