@@ -390,7 +390,6 @@ with tab_results:
 
     table = rs_tables[ticker]
     summary = rs_summaries[ticker]
-    bench_col = next(c for c in table.columns if 'Trading Value' in c and c != 'Stock Trading Value')
 
     # ── Metrics ───────────────────────────────────────────────────────────
     _rows = table.iloc[:-1]           # drop the Average RS summary row
@@ -430,21 +429,6 @@ with tab_results:
                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
                                    xanchor="right", x=1))
     st.plotly_chart(_fig, use_container_width=True)
-
-    # ── Turnover comparison ──────────────────────────────────────────────
-    with st.expander("📊 Underlying trading values"):
-        _fig2 = go.Figure()
-        _fig2.add_trace(go.Bar(x=_rows['Date'], y=_rows['Stock Trading Value'],
-                               name=f"{ticker} turnover"))
-        _fig2.add_trace(go.Scatter(x=_rows['Date'], y=_rows[bench_col], mode='lines',
-                                   name=f"{summary['benchmark']} turnover", yaxis='y2'))
-        _fig2.update_layout(height=360, hovermode="x unified",
-                            yaxis=dict(title=f"{ticker}"),
-                            yaxis2=dict(title=summary['benchmark'], overlaying='y',
-                                        side='right', showgrid=False),
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                                        xanchor="right", x=1))
-        st.plotly_chart(_fig2, use_container_width=True)
 
     # ── Table ─────────────────────────────────────────────────────────────
     st.subheader("📋 RS Table")
