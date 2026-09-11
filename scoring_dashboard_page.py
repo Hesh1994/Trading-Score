@@ -150,6 +150,9 @@ else:
         return COUNTRY_EXCHANGES  # static fallback
 
     _country_exc_map = _load_exchange_map(fmp_key)
+    # Stable keys so other pages (e.g. Relative Strength) can reconstruct the
+    # full exchange list for a country without re-hitting FMP.
+    st.session_state['ta_country_exchange_map'] = _country_exc_map
 
     # ── Country (multiselect with search) ────────────────────────────────
     _sel_countries = st.sidebar.multiselect(
@@ -158,6 +161,7 @@ else:
         key="ta_country",
         placeholder="Search and select countries…",
     )
+    st.session_state['ta_selected_countries'] = _sel_countries
 
     _sel_exc_codes = []
     _sel_exc_label = None
