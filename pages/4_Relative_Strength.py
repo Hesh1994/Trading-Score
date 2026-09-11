@@ -137,7 +137,6 @@ if _country_codes:
     else:
         _bench_options.append(("market", f"🌍 Entire {_country_label} market turnover (tap to load)"))
 _bench_options.append(("custom_list", "✍️ Custom ticker list"))
-_bench_options.append(("custom_etf", "🔤 Custom ETF ticker"))
 _bench_options.append(("upload", "📄 Official turnover (upload CSV)"))
 
 _bench_keys   = [k for k, _ in _bench_options]
@@ -166,13 +165,6 @@ if bench_key == "auto_index":
 
 elif bench_key in _PROXY_NAMES:
     bench_proxy, bench_name = _PROXY_NAMES[bench_key]
-    is_proxy_mode = True
-
-elif bench_key == "custom_etf":
-    bench_proxy = st.sidebar.text_input("Proxy ETF ticker", value="SPY",
-                                        key="rs_proxy_custom").strip().upper()
-    bench_name = st.sidebar.text_input("Benchmark display name", value=bench_proxy,
-                                       key="rs_proxy_name").strip() or bench_proxy
     is_proxy_mode = True
 
 elif bench_key == "group":
@@ -555,12 +547,11 @@ follow-up input (a sector picker, a ticker box, a file uploader):
   caps how many names get downloaded, trading accuracy for speed.
 - **✍️ Custom ticker list** — paste any comma/newline-separated list of
   symbols to build a bespoke peer group.
-- **🔤 Custom ETF ticker** — any single ETF or index ticker as a proxy.
 - **📄 Official turnover (upload CSV)** — if the exchange publishes its own
   daily total turnover figure, upload it directly. This is the most accurate
   option since it isn't a proxy or an approximation from constituent data.
 
-An **ETF/index proxy** (auto index, majors, or custom ETF) is fastest, but
+An **ETF/index proxy** (auto index or a major index preset) is fastest, but
 the RS *level* is only a ratio to that ETF's own turnover — it is **not**
 the stock's true share of total market turnover, since an ETF trades a tiny
 fraction of its underlying index's volume. The **trend** (rising/falling)
