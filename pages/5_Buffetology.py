@@ -250,6 +250,34 @@ if terminal_growth >= discount_rate:
     st.sidebar.error("Terminal growth must be below the discount rate, or the "
                      "terminal value formula divides by zero or goes negative.")
 
+# ── Acceleration ─────────────────────────────────────────────────────────────
+# Whether each ratio's own period-over-period growth rate is itself rising
+# every step across the chosen window (not just growing, but growing
+# faster each period). Computed from a historical series of each ratio's
+# value — using the ACTUAL share price as of each past period, not today's.
+st.sidebar.subheader("🚀 Acceleration")
+st.sidebar.caption("Flags a ratio green in the tables below when its own growth "
+                   "rate rose every period across this window — e.g. P/E growth "
+                   "of 10% → 20% → 30% is accelerating; 10% → 20% → 15% is not.")
+
+_af1, _af2 = st.sidebar.columns(2)
+_accel_annual = _af1.checkbox("Annual", value=st.session_state.get('bt_accel_annual', True),
+                              key="bt_accel_annual")
+_accel_quarterly = _af2.checkbox("Quarterly", value=st.session_state.get('bt_accel_quarterly', False),
+                                 key="bt_accel_quarterly")
+if _accel_annual and _accel_quarterly:
+    st.sidebar.warning("Both checked — using Quarterly.")
+_accel_frequency = "quarter" if _accel_quarterly else "annual"
+
+_accel_interval = st.sidebar.number_input(
+    "Interval (last N quarters or N years)", min_value=3, max_value=40, value=4, step=1,
+    key="bt_accel_interval",
+    help="E.g. 4 with Quarterly = last 4 quarters; 5 with Annual = last 5 years. "
+         "Needs at least 3 periods to judge a trend.")
+
+_accel_run = st.sidebar.button("🚀 Calculate Acceleration", key="bt_accel_run_btn",
+                               use_container_width=True)
+
 # ── Indicators & Criteria ────────────────────────────────────────────────────
 # One expander per main category; each indicator inside gets a checkbox
 # (whether it appears at all) and, once checked, an operator + threshold
@@ -343,6 +371,48 @@ for _cat in bm.CATEGORIES:
 
 _enabled_keys = [k for k, cfg in _criteria.items() if cfg['enabled']]
 
+# ── Acceleration run ──────────────────────────────────────────────────────────
+if _accel_run:
+    if not tickers:
+        st.error("Select or add at least one ticker first.")
+        st.stop()
+    if not _fmp_key:
+        st.error("Enter an FMP API key on the Scoring Dashboard first.")
+        st.stop()
+
+    _accel_series = {}
+    _accel_errors = {}
+    _prog2 = st.progress(0, text="Fetching historical data for acceleration…")
+    for i, t in enumerate(tickers):
+        try:
+            _res = bm.compute_metrics_series(
+                t, _fmp_key, frequency=_accel_frequency, num_points=int(_accel_interval),
+                discount_rate=discount_rate, growth_rate=growth_rate,
+                terminal_growth=terminal_growth, projection_years=int(projection_years),
+                growth_lookback=int(growth_lookback),
+            )
+            _accel_series[t] = _res["series"]
+            if _res["errors"]:
+                _accel_errors[t] = _res["errors"]
+        except Exception as e:
+            _accel_errors[t] = [str(e)]
+        _prog2.progress((i + 1) / len(tickers), text=f"{i+1}/{len(tickers)} — {t}")
+    _prog2.empty()
+
+    st.session_state['bt_accel_flags'] = bm.acceleration_flags(_accel_series)
+    st.session_state['bt_accel_errors'] = _accel_errors
+    st.session_state['bt_accel_meta'] = {'frequency': _accel_frequency, 'interval': int(_accel_interval)}
+    st.success(f"Acceleration calculated over the last {int(_accel_interval)} "
+              f"{'quarters' if _accel_frequency == 'quarter' else 'years'}.")
+
+_accel_flags = st.session_state.get('bt_accel_flags', {})
+_accel_meta = st.session_state.get('bt_accel_meta')
+_accel_errors_saved = st.session_state.get('bt_accel_errors', {})
+if _accel_errors_saved:
+    with st.expander(f"⚠️ Acceleration data notes for {len(_accel_errors_saved)} ticker(s)", expanded=False):
+        for t, errs in _accel_errors_saved.items():
+            st.caption(f"**{t}**: " + "; ".join(errs))
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 if not _run and 'bt_results' not in st.session_state:
     st.info("Choose ticker(s) and set the valuation assumptions in the sidebar, then press "
@@ -423,8 +493,17 @@ else:
                 "% of Selected Criteria", min_value=0, max_value=100, format="%.0f%%"),
         },
     )
-    st.caption("✅/❌ marks in the tables below show whether that indicator's value "
-              "meets the threshold you set in the sidebar.")
+    _accel_caption = ("✅/❌ marks show whether a value meets the threshold you set in the "
+                      "sidebar.")
+    if _accel_meta:
+        _accel_caption += (f" 🟩 green cells are **accelerating** over the last "
+                          f"{_accel_meta['interval']} "
+                          f"{'quarters' if _accel_meta['frequency'] == 'quarter' else 'years'} "
+                          "(that ratio's own growth rate rose every period).")
+    else:
+        _accel_caption += (" Press **🚀 Calculate Acceleration** in the sidebar to also "
+                          "highlight ratios whose growth rate is consistently accelerating.")
+    st.caption(_accel_caption)
 
     # ── Category tables — only categories with a chosen indicator get a tab ──
     _active_categories = [
@@ -440,19 +519,29 @@ else:
 
             rows = []
             raw_rows = []
+            style_rows = []
             for t, r in results.items():
                 vals = r.get("values", {})
                 row = {"Ticker": t}
                 raw_row = {"Ticker": t}
+                style_row = {"Ticker": ""}
                 for key, label in cols:
                     row[label] = _cell(key, vals.get(key))
                     raw_row[label] = vals.get(key)
+                    style_row[label] = ("background-color: #b7f7c0"
+                                        if _accel_flags.get(t, {}).get(key) else "")
                 rows.append(row)
                 raw_rows.append(raw_row)
+                style_rows.append(style_row)
 
             df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True, hide_index=True,
-                         height=min(600, 38 * (len(df) + 1)))
+            _height = min(600, 38 * (len(df) + 1))
+            if _accel_flags:
+                _style_df = pd.DataFrame(style_rows, columns=df.columns, index=df.index)
+                _styled = df.style.apply(lambda _df, _s=_style_df: _s, axis=None)
+                st.dataframe(_styled, use_container_width=True, hide_index=True, height=_height)
+            else:
+                st.dataframe(df, use_container_width=True, hide_index=True, height=_height)
 
             raw_df = pd.DataFrame(raw_rows)
             st.download_button(
@@ -490,6 +579,39 @@ sheet, and cash flow statement line items fetched from FMP (up to 11 years,
 enough for a 10-year CAGR) plus the current quote — nothing here comes from
 a pre-packaged "ratios" endpoint, so every number can be traced back to the
 formula that produced it.
+
+### Acceleration (sidebar)
+
+"Acceleration" is a stronger condition than plain growth: it means a
+ratio's own period-over-period **growth rate** is *itself* getting bigger
+every period, not merely that the ratio is rising. Example: if a ratio's
+period-over-period growth went **10% → 20% → 30%**, that's accelerating —
+each step grew faster than the last. If instead it went **10% → 20% → 15%**,
+growth continued but the *rate* of growth fell back, so that's **not**
+accelerating.
+
+To calculate it:
+
+1. Pick **Annual** or **Quarterly** (checking both falls back to Quarterly).
+2. Set the **Interval** — how many trailing periods to look at (e.g. 4 for
+   "the last four quarters," or 5 for "the last five years"). At least 3
+   periods are needed to judge a trend, since that gives 2 growth-rate
+   readings to compare.
+3. Press **🚀 Calculate Acceleration**.
+
+This re-fetches that many periods of financial statements *and* the
+stock's actual historical daily prices, then recomputes every one of the
+80 indicators as of each past period-end — using the real share price on
+that date, not today's price — so historical P/E, P/B, dividend yield, and
+every other price-based ratio reflect what they actually were at the time,
+not a distortion from today's price. Every indicator's resulting time
+series is then checked for a consistently rising growth rate.
+
+Once calculated, any indicator's cell in the category tables below is
+shaded **green** if it's accelerating over that window — on top of, not
+instead of, its ✅/❌ pass/fail mark from the criteria you set. A blank
+(unshaded) cell means either it isn't accelerating, or there wasn't enough
+historical data to tell.
 
 ### Indicators & Criteria (sidebar)
 
