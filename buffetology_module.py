@@ -156,6 +156,26 @@ def format_value(key, value):
         return "-"
 
 
+def default_step(key):
+    """A sensible number_input step for this indicator's threshold field."""
+    fmt = INDICATOR_FORMATS.get(key, "ratio")
+    if fmt == "money":
+        return 1_000_000.0
+    if fmt == "days":
+        return 1.0
+    return 0.1
+
+
+def passes(value, operator, threshold):
+    """
+    True/False whether `value` satisfies the criterion, None if the value
+    itself is missing (can't be evaluated either way).
+    """
+    if value is None or (isinstance(value, float) and not np.isfinite(value)):
+        return None
+    return value >= threshold if operator == ">=" else value <= threshold
+
+
 # ============================================================================
 # Small numeric helpers
 # ============================================================================

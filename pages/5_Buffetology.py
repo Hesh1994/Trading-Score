@@ -250,6 +250,58 @@ if terminal_growth >= discount_rate:
     st.sidebar.error("Terminal growth must be below the discount rate, or the "
                      "terminal value formula divides by zero or goes negative.")
 
+# ── Indicators & Criteria ────────────────────────────────────────────────────
+# One expander per main category; each indicator inside gets a checkbox
+# (whether it appears at all) and, once checked, an operator + threshold
+# that defines its pass/fail criterion. Persisted across reruns the same
+# way the Scoring Dashboard persists its indicator config.
+st.sidebar.subheader("📋 Indicators & Criteria")
+st.sidebar.caption("Check the indicators you want to see, and set a pass/fail "
+                   "threshold for each.")
+
+if 'bt_criteria_config' not in st.session_state:
+    st.session_state['bt_criteria_config'] = {
+        key: {'enabled': False, 'operator': '>=', 'threshold': 0.0}
+        for key, _cat, _label, _fmt in bm.INDICATOR_SCHEMA
+    }
+else:
+    for key, _cat, _label, _fmt in bm.INDICATOR_SCHEMA:
+        st.session_state['bt_criteria_config'].setdefault(
+            key, {'enabled': False, 'operator': '>=', 'threshold': 0.0})
+
+_criteria = st.session_state['bt_criteria_config']
+
+for _cat in bm.CATEGORIES:
+    _cat_indicators = bm.indicators_by_category(_cat)
+    _n_enabled = sum(1 for k, _ in _cat_indicators if _criteria[k]['enabled'])
+    with st.sidebar.expander(f"{_cat} ({_n_enabled}/{len(_cat_indicators)})", expanded=False):
+        _sa, _ca = st.columns(2)
+        if _sa.button("✅ Select all", key=f"bt_selall_{_cat}", use_container_width=True):
+            for k, _ in _cat_indicators:
+                _criteria[k]['enabled'] = True
+            st.rerun()
+        if _ca.button("◻️ Clear all", key=f"bt_clearall_{_cat}", use_container_width=True):
+            for k, _ in _cat_indicators:
+                _criteria[k]['enabled'] = False
+            st.rerun()
+
+        for key, label in _cat_indicators:
+            cfg = _criteria[key]
+            enabled = st.checkbox(label, value=cfg['enabled'], key=f"bt_en_{key}")
+            cfg['enabled'] = enabled
+            if enabled:
+                _oc, _tc = st.columns([1, 1.3])
+                op_label = _oc.selectbox(
+                    "Op", ["≥", "≤"], index=0 if cfg['operator'] == '>=' else 1,
+                    key=f"bt_op_{key}", label_visibility="collapsed")
+                cfg['operator'] = '>=' if op_label == "≥" else '<='
+                cfg['threshold'] = _tc.number_input(
+                    "Threshold", value=float(cfg['threshold']),
+                    step=bm.default_step(key), key=f"bt_thr_{key}",
+                    label_visibility="collapsed")
+
+_enabled_keys = [k for k, cfg in _criteria.items() if cfg['enabled']]
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 if not _run and 'bt_results' not in st.session_state:
     st.info("Choose ticker(s) and set the valuation assumptions in the sidebar, then press "
@@ -291,36 +343,83 @@ if _errored:
         for t, errs in _errored.items():
             st.caption(f"**{t}**: " + "; ".join(errs))
 
-# ── Category tables ─────────────────────────────────────────────────────────
-tabs = st.tabs([f"📊 {c}" for c in bm.CATEGORIES])
+def _cell(key, value):
+    """Formatted value plus a pass/fail mark against its sidebar criterion."""
+    text = bm.format_value(key, value)
+    cfg = _criteria.get(key)
+    if not cfg or not cfg['enabled'] or text == "-":
+        return text
+    ok = bm.passes(value, cfg['operator'], cfg['threshold'])
+    mark = "✅" if ok else ("❌" if ok is False else "")
+    return f"{text} {mark}".rstrip()
 
-for cat, tab in zip(bm.CATEGORIES, tabs):
-    with tab:
-        cols = bm.indicators_by_category(cat)
-        rows = []
-        raw_rows = []
-        for t, r in results.items():
-            vals = r.get("values", {})
-            row = {"Ticker": t}
-            raw_row = {"Ticker": t}
-            for key, label in cols:
-                row[label] = bm.format_value(key, vals.get(key))
-                raw_row[label] = vals.get(key)
-            rows.append(row)
-            raw_rows.append(raw_row)
 
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True,
-                     height=min(600, 38 * (len(df) + 1)))
+if not _enabled_keys:
+    st.info("No indicators selected yet. Check the ones you want in "
+            "**📋 Indicators & Criteria** in the sidebar — each shown value is "
+            "marked ✅/❌ against the threshold you set there.")
+else:
+    # ── Summary: criteria met per ticker ─────────────────────────────────
+    st.subheader("📋 Criteria Summary")
+    _summary_rows = []
+    for t, r in results.items():
+        vals = r.get("values", {})
+        _met = sum(1 for k in _enabled_keys
+                   if bm.passes(vals.get(k), _criteria[k]['operator'], _criteria[k]['threshold']))
+        _evaluable = sum(1 for k in _enabled_keys if vals.get(k) is not None)
+        _summary_rows.append({
+            "Ticker": t,
+            "Criteria Met": f"{_met} / {len(_enabled_keys)}",
+            "% of Selected Criteria": round(_met / len(_enabled_keys) * 100, 1),
+            "Data Available For": f"{_evaluable} / {len(_enabled_keys)}",
+        })
+    _summary_df = pd.DataFrame(_summary_rows).sort_values(
+        "% of Selected Criteria", ascending=False)
+    st.dataframe(
+        _summary_df, use_container_width=True, hide_index=True,
+        column_config={
+            "% of Selected Criteria": st.column_config.ProgressColumn(
+                "% of Selected Criteria", min_value=0, max_value=100, format="%.0f%%"),
+        },
+    )
+    st.caption("✅/❌ marks in the tables below show whether that indicator's value "
+              "meets the threshold you set in the sidebar.")
 
-        raw_df = pd.DataFrame(raw_rows)
-        st.download_button(
-            f"⬇️ Download {cat} (CSV)",
-            data=raw_df.to_csv(index=False).encode('utf-8'),
-            file_name=f"buffetology_{cat.lower().replace(' ', '_')}.csv",
-            mime="text/csv",
-            key=f"bt_download_{cat}",
-        )
+    # ── Category tables (enabled indicators only) ─────────────────────────
+    tabs = st.tabs([f"📊 {c}" for c in bm.CATEGORIES])
+
+    for cat, tab in zip(bm.CATEGORIES, tabs):
+        with tab:
+            cols = [(k, label) for k, label in bm.indicators_by_category(cat)
+                   if k in _enabled_keys]
+            if not cols:
+                st.caption(f"No {cat} indicators selected — check some in the sidebar.")
+                continue
+
+            rows = []
+            raw_rows = []
+            for t, r in results.items():
+                vals = r.get("values", {})
+                row = {"Ticker": t}
+                raw_row = {"Ticker": t}
+                for key, label in cols:
+                    row[label] = _cell(key, vals.get(key))
+                    raw_row[label] = vals.get(key)
+                rows.append(row)
+                raw_rows.append(raw_row)
+
+            df = pd.DataFrame(rows)
+            st.dataframe(df, use_container_width=True, hide_index=True,
+                         height=min(600, 38 * (len(df) + 1)))
+
+            raw_df = pd.DataFrame(raw_rows)
+            st.download_button(
+                f"⬇️ Download {cat} (CSV)",
+                data=raw_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"buffetology_{cat.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+                key=f"bt_download_{cat}",
+            )
 
 # ── Combined download ────────────────────────────────────────────────────────
 st.markdown("---")
@@ -349,6 +448,19 @@ sheet, and cash flow statement line items fetched from FMP (up to 11 years,
 enough for a 10-year CAGR) plus the current quote — nothing here comes from
 a pre-packaged "ratios" endpoint, so every number can be traced back to the
 formula that produced it.
+
+### Indicators & Criteria (sidebar)
+
+Nothing shows up in the tables until you check it in **📋 Indicators &
+Criteria**. Each category is its own expander; checking an indicator reveals
+an operator (**≥** or **≤**) and a threshold number — that's its pass/fail
+criterion. Every displayed value is then marked **✅** if it meets the
+criterion, **❌** if it doesn't, or left unmarked if the underlying data is
+missing. The **Criteria Summary** table at the top counts, per ticker, how
+many of your selected criteria it satisfies — a quick way to rank several
+candidates against the same Buffett-style screen. Thresholds are entirely
+yours to set; nothing here is pre-loaded with an opinion about what "good"
+looks like for any given indicator.
 
 ### Key building blocks
 
