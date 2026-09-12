@@ -275,8 +275,13 @@ _accel_interval = st.sidebar.number_input(
     help="E.g. 4 with Quarterly = last 4 quarters; 5 with Annual = last 5 years. "
          "Needs at least 3 periods to judge a trend.")
 
-_accel_run = st.sidebar.button("🚀 Calculate Acceleration", key="bt_accel_run_btn",
-                               use_container_width=True)
+_accel_checked = st.sidebar.checkbox("🚀 Calculate Acceleration", key="bt_accel_run_cb")
+# Fire once on the unchecked -> checked transition, not on every rerun the
+# checkbox happens to still be on (e.g. from clicking something else in the
+# sidebar) — otherwise every unrelated interaction would re-trigger the
+# fundamentals + price-history refetch for every ticker.
+_accel_run = _accel_checked and not st.session_state.get('_bt_accel_was_checked', False)
+st.session_state['_bt_accel_was_checked'] = _accel_checked
 
 # ── Indicators & Criteria ────────────────────────────────────────────────────
 # One expander per main category; each indicator inside gets a checkbox
@@ -501,7 +506,7 @@ else:
                           f"{'quarters' if _accel_meta['frequency'] == 'quarter' else 'years'} "
                           "(that ratio's own growth rate rose every period).")
     else:
-        _accel_caption += (" Press **🚀 Calculate Acceleration** in the sidebar to also "
+        _accel_caption += (" Check **🚀 Calculate Acceleration** in the sidebar to also "
                           "highlight ratios whose growth rate is consistently accelerating.")
     st.caption(_accel_caption)
 
@@ -597,7 +602,10 @@ To calculate it:
    "the last four quarters," or 5 for "the last five years"). At least 3
    periods are needed to judge a trend, since that gives 2 growth-rate
    readings to compare.
-3. Press **🚀 Calculate Acceleration**.
+3. Check **🚀 Calculate Acceleration**. It runs once, on the moment you
+   check it — leaving it checked afterward doesn't keep refetching every
+   time you interact with something else in the sidebar; uncheck and
+   re-check it to recalculate with new settings.
 
 This re-fetches that many periods of financial statements *and* the
 stock's actual historical daily prices, then recomputes every one of the
