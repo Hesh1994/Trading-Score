@@ -226,12 +226,13 @@ def _pct(x):
 # Fetch + per-year derivation
 # ============================================================================
 
-def fetch_fundamentals(symbol, api_key, years=11):
+def fetch_fundamentals(symbol, api_key, limit=11, period="annual"):
     """
-    Pull annual income statement, balance sheet, cash flow (most-recent
-    first, up to `years` periods), current quote, and — best effort —
-    a forward EPS estimate. Returns a dict; any piece that fails to fetch
-    is an empty list/None rather than raising.
+    Pull income statement, balance sheet, cash flow (most-recent first, up
+    to `limit` periods of `period` frequency — 'annual' or 'quarterly'),
+    current quote, and — best effort — a forward EPS estimate. Returns a
+    dict; any piece that fails to fetch is an empty list/None rather than
+    raising.
     """
     sym = _resolve_fmp_symbol(symbol.upper(), api_key)
     out = {"symbol": sym, "errors": []}
@@ -241,10 +242,10 @@ def fetch_fundamentals(symbol, api_key, years=11):
                             ("cashflow", "cash-flow-statement")):
         try:
             rows = _fmp_get(endpoint, api_key,
-                            {"symbol": sym, "period": "annual", "limit": years})
+                            {"symbol": sym, "period": period, "limit": limit})
             out[field] = rows if isinstance(rows, list) else []
             if not out[field]:
-                out["errors"].append(f"FMP: no annual {field} data")
+                out["errors"].append(f"FMP: no {period} {field} data")
         except Exception as e:
             out[field] = []
             out["errors"].append(f"FMP {field}: {e}")
@@ -379,7 +380,7 @@ def compute_metrics(symbol, api_key, discount_rate=0.10, growth_rate=0.08,
                     terminal_growth=0.03, projection_years=10,
                     growth_lookback=5):
     """
-    Fetch + compute the full 80-indicator set for one ticker.
+    Fetch + compute the full 80-indicator set for one ticker, as of today.
     Returns {'symbol', 'errors', 'values': {indicator_key: number_or_None}}.
     Values are raw numbers (percent indicators already ×100) — use
     format_value() for display.
@@ -387,30 +388,62 @@ def compute_metrics(symbol, api_key, discount_rate=0.10, growth_rate=0.08,
     fundamentals = fetch_fundamentals(symbol, api_key)
     years = derive_years(fundamentals)
     errors = list(fundamentals.get("errors", []))
-    v = {}
 
     if not years:
         errors.append("No usable annual financial statements returned.")
-        return {"symbol": fundamentals["symbol"], "errors": errors, "values": v}
+        return {"symbol": fundamentals["symbol"], "errors": errors, "values": {}}
 
-    y0 = years[0]
-    y1 = years[1] if len(years) > 1 else None
     quote = fundamentals.get("quote") or {}
     price = _num(quote.get("price"))
     market_cap = _num(quote.get("marketCap"))
-    if market_cap is None and price is not None and y0.get("shares"):
-        market_cap = price * y0["shares"]
+    if market_cap is None and price is not None and years[0].get("shares"):
+        market_cap = price * years[0]["shares"]
 
-    def yr(i):
+    v = _ratio_values_at(
+        years, 0, price, market_cap, fundamentals.get("forward_eps"),
+        discount_rate, growth_rate, terminal_growth, projection_years,
+        growth_lookback, periods_per_year=1,
+    )
+    return {"symbol": fundamentals["symbol"], "errors": errors, "values": v}
+
+
+def _ratio_values_at(years, idx, price, market_cap, forward_eps,
+                     discount_rate, growth_rate, terminal_growth,
+                     projection_years, growth_lookback, periods_per_year=1):
+    """
+    The full 80-indicator set as of one point in `years` (index `idx`;
+    0 = most recent). `periods_per_year` is 1 for annual data, 4 for
+    quarterly — it converts the year-denominated lookback windows (3Y, 5Y,
+    growth_lookback, ...) into the right number of list positions, so the
+    same formulas work for either frequency. Powers compute_metrics() (at
+    idx=0, periods_per_year=1) and the historical acceleration series.
+    """
+    v = {}
+    y0 = years[idx] if 0 <= idx < len(years) else None
+    if y0 is None:
+        return v
+
+    def yr(rel_periods):
+        i = idx + rel_periods
         return years[i] if 0 <= i < len(years) else None
 
-    def field_cagr(field, n):
-        if not n:
+    y1 = yr(1)  # immediately preceding period — used for "average X" bases
+
+    def field_cagr(field, n_years):
+        if not n_years:
             return None
-        end_y, start_y = yr(0), yr(n)
+        n_periods = int(round(n_years * periods_per_year))
+        end_y, start_y = yr(0), yr(n_periods)
         if not end_y or not start_y:
             return None
-        return _cagr(end_y.get(field), start_y.get(field), n)
+        return _cagr(end_y.get(field), start_y.get(field), n_years)
+
+    def yoy(field):
+        """This-period-vs-same-period-last-year change (quarter-safe)."""
+        prior = yr(periods_per_year)
+        if prior is None:
+            return None
+        return _cagr(y0.get(field), prior.get(field), 1)
 
     # ── Enterprise Value ────────────────────────────────────────────────
     ev = None
@@ -445,7 +478,8 @@ def compute_metrics(symbol, api_key, discount_rate=0.10, growth_rate=0.08,
     v["fcf_cagr_3y"] = _pct(field_cagr("fcf", 3))
     v["fcf_cagr_5y"] = _pct(field_cagr("fcf", 5))
     v["fcf_cagr_10y"] = _pct(field_cagr("fcf", 10))
-    v["bvps_cagr"] = _pct(field_cagr("bvps", min(growth_lookback, len(years) - 1) or None))
+    _max_years_back = int((len(years) - 1 - idx) / periods_per_year)
+    v["bvps_cagr"] = _pct(field_cagr("bvps", min(growth_lookback, _max_years_back) or None))
 
     # ── Cash Flow ─────────────────────────────────────────────────────
     v["cfo"] = y0.get("cfo")
@@ -505,26 +539,25 @@ def compute_metrics(symbol, api_key, discount_rate=0.10, growth_rate=0.08,
         v["incremental_roic"] = None
 
     # ── Shareholder Economics ─────────────────────────────────────────
-    n_hist = min(growth_lookback, len(years) - 1) or None
+    n_hist = min(growth_lookback, _max_years_back) or None
     v["shares_cagr"] = _pct(field_cagr("shares", n_hist))
-    v["eps_growth"] = _pct(_cagr(y0.get("eps"), y1.get("eps"), 1)) if y1 else None
-    v["fcf_per_share_growth"] = None
-    if y1 is not None:
-        fcf_ps_0 = _div(y0.get("fcf"), y0.get("shares"))
-        fcf_ps_1 = _div(y1.get("fcf"), y1.get("shares"))
-        v["fcf_per_share_growth"] = _pct(_cagr(fcf_ps_0, fcf_ps_1, 1))
+    v["eps_growth"] = _pct(yoy("eps"))
+    fcf_ps_0 = _div(y0.get("fcf"), y0.get("shares"))
+    _prior_period = yr(periods_per_year)
+    fcf_ps_prior = _div(_prior_period.get("fcf"), _prior_period.get("shares")) if _prior_period else None
+    v["fcf_per_share_growth"] = _pct(_cagr(fcf_ps_0, fcf_ps_prior, 1))
     div_per_share = _div(y0.get("dividends_paid"), y0.get("shares"))
     v["dividend_yield"] = _pct(_div(div_per_share, price))
     v["dividend_cagr"] = _pct(field_cagr("dividends_paid", n_hist))
     v["dividend_payout"] = _pct(_div(y0.get("dividends_paid"), y0.get("net_income")))
     v["fcf_payout"] = _pct(_div(y0.get("dividends_paid"), y0.get("fcf")))
     v["buyback_yield"] = _pct(_div(y0.get("net_buybacks"), market_cap))
-    v["net_dilution"] = _pct(_cagr(y0.get("shares"), y1.get("shares"), 1)) if y1 else None
+    v["net_dilution"] = _pct(yoy("shares"))
     v["retained_earnings_growth"] = _pct(field_cagr("retained_earnings", n_hist))
 
     # ── Valuation ─────────────────────────────────────────────────────
     v["pe"] = _div(price, y0.get("eps"))
-    v["forward_pe"] = _div(price, fundamentals.get("forward_eps"))
+    v["forward_pe"] = _div(price, forward_eps)
     v["p_fcf"] = _div(market_cap, y0.get("fcf"))
     v["p_s"] = _div(market_cap, y0.get("revenue"))
     v["p_b"] = _div(market_cap, y0.get("equity"))
@@ -537,7 +570,8 @@ def compute_metrics(symbol, api_key, discount_rate=0.10, growth_rate=0.08,
     v["owner_earnings_yield_val"] = v["owner_earnings_yield"]
 
     # ── Economic Valuation / intrinsic value ─────────────────────────
-    lookback_years = years[:growth_lookback + 1] if len(years) > 1 else years
+    _lookback_span = growth_lookback * periods_per_year + 1
+    lookback_years = years[idx: idx + _lookback_span] if len(years) > 1 else years[idx:idx + 1]
     ni_hist = [y.get("net_income") for y in lookback_years if y.get("net_income") is not None]
     fcf_hist = [y.get("fcf") for y in lookback_years if y.get("fcf") is not None]
     v["normalized_earnings"] = float(np.mean(ni_hist)) if ni_hist else None
@@ -575,4 +609,140 @@ def compute_metrics(symbol, api_key, discount_rate=0.10, growth_rate=0.08,
         expected_return = oey + (oe_growth or 0.0) + (net_buyback_yield or 0.0)
     v["expected_return"] = _pct(expected_return)
 
-    return {"symbol": fundamentals["symbol"], "errors": errors, "values": v}
+    return v
+
+
+# ============================================================================
+# Historical series + acceleration
+# ============================================================================
+# "Acceleration" means each period's ratio-over-ratio growth rate is itself
+# consistently higher than the one before it across the chosen window — a
+# stronger condition than plain growth. Example: P/E readings whose period
+# growth rates went 10% -> 20% -> 30% are accelerating; 10% -> 20% -> 15%
+# are not (growth resumed but did not keep accelerating).
+
+MAX_HISTORY_LIMIT = 120  # hard cap on periods requested from FMP per ticker
+
+
+def fetch_price_history(symbol, api_key, start_date, end_date):
+    """
+    Daily close prices between start_date and end_date (inclusive-ish,
+    whatever FMP returns), sorted ascending by date. List of (date_str,
+    close) tuples; empty list on failure.
+    """
+    try:
+        sym = _resolve_fmp_symbol(symbol.upper(), api_key)
+        rows = _fmp_get("historical-price-eod/full", api_key,
+                        {"symbol": sym, "from": start_date, "to": end_date})
+        if not isinstance(rows, list):
+            return []
+        pairs = [(r.get("date"), _num(r.get("close"))) for r in rows
+                if r.get("date") and _num(r.get("close")) is not None]
+        pairs.sort(key=lambda p: p[0])
+        return pairs
+    except Exception:
+        return []
+
+
+def _price_as_of(price_history, date_str):
+    """Latest close on or before date_str; None if no such price exists."""
+    if not price_history or not date_str:
+        return None
+    best = None
+    for d, close in price_history:
+        if d <= date_str:
+            best = close
+        else:
+            break
+    return best
+
+
+def compute_metrics_series(symbol, api_key, frequency="annual", num_points=5,
+                           discount_rate=0.10, growth_rate=0.08,
+                           terminal_growth=0.03, projection_years=10,
+                           growth_lookback=5):
+    """
+    The full 80-indicator set computed at each of the last `num_points`
+    periods (annual or quarterly), using the historical share price as of
+    each period's statement date (not today's price) for every
+    price-dependent indicator. Returns {'symbol', 'errors', 'dates':
+    [oldest..newest], 'series': {indicator_key: [oldest..newest values]}}.
+    """
+    periods_per_year = 4 if frequency == "quarter" else 1
+    period_param = "quarterly" if frequency == "quarter" else "annual"
+    fetch_limit = min(
+        MAX_HISTORY_LIMIT,
+        int(num_points) + int(growth_lookback) * periods_per_year + 10 * periods_per_year + 5,
+    )
+
+    fundamentals = fetch_fundamentals(symbol, api_key, limit=fetch_limit, period=period_param)
+    years = derive_years(fundamentals)
+    errors = list(fundamentals.get("errors", []))
+    sym = fundamentals["symbol"]
+
+    empty = {"symbol": sym, "errors": errors, "dates": [], "series": {}}
+    if not years:
+        errors.append(f"No usable {period_param} financial statements returned.")
+        return empty
+    if len(years) < num_points:
+        errors.append(f"Only {len(years)} of the requested {num_points} periods were "
+                      "available — some points in the series will be blank.")
+
+    dates = [y.get("date") for y in years if y.get("date")]
+    start_date = min(dates) if dates else None
+    end_date = max(dates) if dates else None
+    price_history = fetch_price_history(sym, api_key, start_date, end_date) if start_date else []
+    if not price_history:
+        errors.append("No historical price data — price-based indicators will be blank.")
+
+    points = []  # oldest -> newest
+    for idx in range(min(int(num_points), len(years)) - 1, -1, -1):
+        y = years[idx]
+        price = _price_as_of(price_history, y.get("date"))
+        shares = y.get("shares")
+        market_cap = price * shares if price is not None and shares else None
+        vals = _ratio_values_at(
+            years, idx, price, market_cap, None,
+            discount_rate, growth_rate, terminal_growth, projection_years,
+            growth_lookback, periods_per_year=periods_per_year,
+        )
+        points.append((y.get("date"), vals))
+
+    series = {key: [vals.get(key) for _d, vals in points]
+             for key, _cat, _label, _fmt in INDICATOR_SCHEMA}
+    return {"symbol": sym, "errors": errors,
+           "dates": [d for d, _v in points], "series": series}
+
+
+def acceleration_flags(series_by_ticker):
+    """
+    series_by_ticker: {ticker: {indicator_key: [oldest..newest values]}}
+    (as produced by compute_metrics_series, per ticker).
+
+    Returns {ticker: {indicator_key: True/False/None}} — True if that
+    indicator's own period-over-period growth rate rose at every step
+    across the series (a consistent acceleration), False if it didn't,
+    None if there isn't enough data to judge (fewer than 2 valid
+    consecutive growth readings).
+    """
+    out = {}
+    for ticker, series in series_by_ticker.items():
+        out[ticker] = {}
+        for key, values in series.items():
+            out[ticker][key] = _is_accelerating(values)
+    return out
+
+
+def _is_accelerating(values):
+    """One indicator's chronological value series -> True/False/None."""
+    changes = []
+    for i in range(1, len(values)):
+        a, b = values[i - 1], values[i]
+        if a is None or b is None or a == 0:
+            changes.append(None)
+        else:
+            changes.append((b - a) / abs(a))
+
+    if len(changes) < 2 or any(c is None for c in changes):
+        return None
+    return all(changes[i] > changes[i - 1] for i in range(1, len(changes)))
