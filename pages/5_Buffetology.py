@@ -426,16 +426,17 @@ else:
     st.caption("✅/❌ marks in the tables below show whether that indicator's value "
               "meets the threshold you set in the sidebar.")
 
-    # ── Category tables (enabled indicators only) ─────────────────────────
-    tabs = st.tabs([f"📊 {c}" for c in bm.CATEGORIES])
+    # ── Category tables — only categories with a chosen indicator get a tab ──
+    _active_categories = [
+        cat for cat in bm.CATEGORIES
+        if any(k in _enabled_keys for k, _ in bm.indicators_by_category(cat))
+    ]
+    tabs = st.tabs([f"📊 {c}" for c in _active_categories])
 
-    for cat, tab in zip(bm.CATEGORIES, tabs):
+    for cat, tab in zip(_active_categories, tabs):
         with tab:
             cols = [(k, label) for k, label in bm.indicators_by_category(cat)
                    if k in _enabled_keys]
-            if not cols:
-                st.caption(f"No {cat} indicators selected — check some in the sidebar.")
-                continue
 
             rows = []
             raw_rows = []
