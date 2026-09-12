@@ -6,7 +6,7 @@ Economics, Valuation, and Economic Valuation (intrinsic value / DCF).
 Data via the FMP API (same key used on the Scoring Dashboard).
 """
 
-import sys, os
+import sys, os, json
 
 _root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 if _root not in sys.path:
@@ -253,23 +253,64 @@ if terminal_growth >= discount_rate:
 # ── Indicators & Criteria ────────────────────────────────────────────────────
 # One expander per main category; each indicator inside gets a checkbox
 # (whether it appears at all) and, once checked, an operator + threshold
-# that defines its pass/fail criterion. Persisted across reruns the same
-# way the Scoring Dashboard persists its indicator config.
+# that defines its pass/fail criterion. Kept in session_state across reruns,
+# and can be saved to disk so the same selection and thresholds come back
+# the next time this page is opened (a new browser session starts a fresh
+# session_state, so the on-disk copy is what survives that).
+_CRITERIA_FILE = os.path.join(os.path.expanduser("~"), ".buffetology_criteria.json")
+
+
+def _default_criteria():
+    return {key: {'enabled': False, 'operator': '>=', 'threshold': 0.0}
+           for key, _cat, _label, _fmt in bm.INDICATOR_SCHEMA}
+
+
+def _load_saved_criteria():
+    try:
+        if os.path.exists(_CRITERIA_FILE):
+            with open(_CRITERIA_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
 st.sidebar.subheader("📋 Indicators & Criteria")
 st.sidebar.caption("Check the indicators you want to see, and set a pass/fail "
                    "threshold for each.")
 
 if 'bt_criteria_config' not in st.session_state:
-    st.session_state['bt_criteria_config'] = {
-        key: {'enabled': False, 'operator': '>=', 'threshold': 0.0}
-        for key, _cat, _label, _fmt in bm.INDICATOR_SCHEMA
-    }
+    _defaults = _default_criteria()
+    _saved = _load_saved_criteria()
+    if _saved:
+        for key, cfg in _saved.items():
+            if key in _defaults and isinstance(cfg, dict):
+                _defaults[key].update(cfg)
+    st.session_state['bt_criteria_config'] = _defaults
 else:
     for key, _cat, _label, _fmt in bm.INDICATOR_SCHEMA:
         st.session_state['bt_criteria_config'].setdefault(
             key, {'enabled': False, 'operator': '>=', 'threshold': 0.0})
 
 _criteria = st.session_state['bt_criteria_config']
+
+_sc1, _sc2 = st.sidebar.columns(2)
+if _sc1.button("💾 Save selection", key="bt_save_criteria_btn", use_container_width=True):
+    try:
+        with open(_CRITERIA_FILE, 'w') as _f:
+            json.dump(_criteria, _f)
+        st.sidebar.success("Saved — loads automatically next time.")
+    except Exception as _e:
+        st.sidebar.error(f"Could not save: {_e}")
+if _sc2.button("🗑️ Clear saved", key="bt_clear_saved_btn", use_container_width=True,
+              disabled=not os.path.exists(_CRITERIA_FILE)):
+    try:
+        os.remove(_CRITERIA_FILE)
+        st.sidebar.success("Cleared the saved selection.")
+    except Exception as _e:
+        st.sidebar.error(f"Could not clear: {_e}")
+st.sidebar.caption("💾 Saved to disk" if os.path.exists(_CRITERIA_FILE)
+                   else "Not saved yet — changes apply now but won't be here next visit.")
 
 for _cat in bm.CATEGORIES:
     _cat_indicators = bm.indicators_by_category(_cat)
@@ -461,6 +502,13 @@ many of your selected criteria it satisfies — a quick way to rank several
 candidates against the same Buffett-style screen. Thresholds are entirely
 yours to set; nothing here is pre-loaded with an opinion about what "good"
 looks like for any given indicator.
+
+Your selection and thresholds live in the browser session while you work,
+but a fresh session (reopening the app, restarting the server) starts
+blank unless you press **💾 Save selection** — that writes the whole
+configuration to a small file on this machine, which is then loaded
+automatically the next time this page opens. **🗑️ Clear saved** deletes
+that file so the next visit starts from scratch again.
 
 ### Key building blocks
 
