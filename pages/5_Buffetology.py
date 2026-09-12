@@ -573,6 +573,147 @@ sidebar — small changes to the discount rate or growth rate can swing the
 intrinsic value substantially. Treat it as a framework for thinking about
 value, not a precise target price.
 
+### Formula Reference
+
+Every indicator's exact formula, grouped by category, plus the supporting
+items (Gross Profit, EBIT, etc.) used to build them.
+
+**Profitability**
+
+| Indicator | Formula |
+|---|---|
+| ROE | Net Income ÷ Average Shareholders' Equity × 100 |
+| ROIC | NOPAT ÷ Average Invested Capital × 100 |
+| ROCE | EBIT ÷ Average Capital Employed × 100 |
+| ROA | Net Income ÷ Average Total Assets × 100 |
+| Gross Margin | Gross Profit ÷ Revenue × 100 |
+| Operating Margin | Operating Income ÷ Revenue × 100 |
+| EBITDA Margin | EBITDA ÷ Revenue × 100 |
+| Net Margin | Net Income ÷ Revenue × 100 |
+| FCF Margin | FCF ÷ Revenue × 100 |
+| Owner Earnings Margin | Owner Earnings ÷ Revenue × 100 |
+
+**Growth**
+
+| Indicator | Formula |
+|---|---|
+| Revenue CAGR 3Y | (Revenueₜ ÷ Revenueₜ₋₃)^(1/3) − 1 |
+| Revenue CAGR 5Y | (Revenueₜ ÷ Revenueₜ₋₅)^(1/5) − 1 |
+| Revenue CAGR 10Y | (Revenueₜ ÷ Revenueₜ₋₁₀)^(1/10) − 1 |
+| EPS CAGR 3Y | (EPSₜ ÷ EPSₜ₋₃)^(1/3) − 1 |
+| EPS CAGR 5Y | (EPSₜ ÷ EPSₜ₋₅)^(1/5) − 1 |
+| EPS CAGR 10Y | (EPSₜ ÷ EPSₜ₋₁₀)^(1/10) − 1 |
+| FCF CAGR 3Y | (FCFₜ ÷ FCFₜ₋₃)^(1/3) − 1 |
+| FCF CAGR 5Y | (FCFₜ ÷ FCFₜ₋₅)^(1/5) − 1 |
+| FCF CAGR 10Y | (FCFₜ ÷ FCFₜ₋₁₀)^(1/10) − 1 |
+| Book Value/Share CAGR | (BVPSₜ ÷ BVPSₜ₋ₙ)^(1/n) − 1 |
+
+**Cash Flow**
+
+| Indicator | Formula |
+|---|---|
+| CFO | Cash Flow from Operations |
+| FCF | CFO − Capital Expenditures |
+| FCF/Share | FCF ÷ Diluted Shares Outstanding |
+| Owner Earnings | Net Income + D&A − Maintenance CapEx − Required ΔNWC |
+| Owner Earnings/Share | Owner Earnings ÷ Diluted Shares Outstanding |
+| FCF/Net Income | FCF ÷ Net Income × 100 |
+| CFO/Net Income | CFO ÷ Net Income × 100 |
+| CapEx/CFO | Capital Expenditures ÷ CFO × 100 |
+| CapEx/Revenue | Capital Expenditures ÷ Revenue × 100 |
+| Owner Earnings Yield | Owner Earnings ÷ Market Capitalization × 100 |
+
+**Balance Sheet**
+
+| Indicator | Formula |
+|---|---|
+| Debt/Equity | Total Debt ÷ Shareholders' Equity |
+| Net Debt/Equity | (Total Debt − Cash) ÷ Equity |
+| Debt/EBITDA | Total Debt ÷ EBITDA |
+| Net Debt/EBITDA | (Total Debt − Cash) ÷ EBITDA |
+| Debt/FCF | Total Debt ÷ FCF |
+| Net Debt/FCF | (Total Debt − Cash) ÷ FCF |
+| Interest Coverage | EBIT ÷ Interest Expense |
+| Current Ratio | Current Assets ÷ Current Liabilities |
+| Quick Ratio | (Cash + Marketable Securities + A/R) ÷ Current Liabilities |
+| Cash/Assets | Cash & Equivalents ÷ Total Assets × 100 |
+
+**Capital Efficiency**
+
+| Indicator | Formula |
+|---|---|
+| Asset Turnover | Revenue ÷ Average Total Assets |
+| Working Capital Turnover | Revenue ÷ Average Operating Working Capital |
+| Inventory Turnover | COGS ÷ Average Inventory |
+| Receivables Turnover | Revenue ÷ Average Accounts Receivable |
+| Payables Turnover | COGS ÷ Average Accounts Payable |
+| DSO | Average A/R ÷ Revenue × 365 |
+| DIO | Average Inventory ÷ COGS × 365 |
+| DPO | Average A/P ÷ COGS × 365 |
+| Cash Conversion Cycle | DSO + DIO − DPO |
+| Incremental ROIC | ΔNOPAT ÷ ΔInvested Capital × 100 |
+
+**Shareholder Economics**
+
+| Indicator | Formula |
+|---|---|
+| Shares Outstanding CAGR | (Sharesₜ ÷ Sharesₜ₋ₙ)^(1/n) − 1 |
+| EPS Growth | (EPSₜ ÷ EPSₜ₋₁) − 1 |
+| FCF/Share Growth | (FCF/Shareₜ ÷ FCF/Shareₜ₋₁) − 1 |
+| Dividend Yield | Dividend/Share ÷ Share Price × 100 |
+| Dividend CAGR | (Dividendₜ ÷ Dividendₜ₋ₙ)^(1/n) − 1 |
+| Dividend Payout | Dividends ÷ Net Income × 100 |
+| FCF Payout | Dividends ÷ FCF × 100 |
+| Buyback Yield | Net Share Repurchases ÷ Market Capitalization × 100 |
+| Net Dilution | (Sharesₜ ÷ Sharesₜ₋₁) − 1 |
+| Retained Earnings Growth | (REₜ ÷ REₜ₋ₙ)^(1/n) − 1 |
+
+**Valuation**
+
+| Indicator | Formula |
+|---|---|
+| P/E | Market Price ÷ EPS |
+| Forward P/E | Current Price ÷ Forward EPS |
+| P/FCF | Market Capitalization ÷ FCF |
+| P/S | Market Capitalization ÷ Revenue |
+| P/B | Market Capitalization ÷ Book Value |
+| EV/Sales | Enterprise Value ÷ Revenue |
+| EV/EBIT | Enterprise Value ÷ EBIT |
+| EV/EBITDA | Enterprise Value ÷ EBITDA |
+| EV/FCF | Enterprise Value ÷ FCF |
+| Earnings Yield | EPS ÷ Share Price × 100 |
+| FCF Yield | FCF ÷ Market Capitalization × 100 |
+| Owner Earnings Yield | Owner Earnings ÷ Market Capitalization × 100 |
+
+**Economic Valuation**
+
+| Indicator | Formula |
+|---|---|
+| Normalized Earnings | Sustainable/normalized Net Income or Owner Earnings after removing abnormal items |
+| Normalized FCF | Sustainable FCF after normalizing cyclicality, CapEx and working capital |
+| Owner Earnings | Net Income + D&A − Maintenance CapEx − Required ΔNWC |
+| Intrinsic Value | Σ[Owner Earningsₜ ÷ (1+r)ᵗ] + PV(Terminal Value) |
+| Intrinsic Value/Share | Intrinsic Value ÷ Diluted Shares Outstanding |
+| Price/Intrinsic Value | Current Share Price ÷ Intrinsic Value/Share |
+| Margin of Safety | 1 − (Current Share Price ÷ Intrinsic Value/Share) |
+| Expected Long-Term Shareholder Return | Owner Earnings Yield + Owner Earnings Growth + Net Buyback Yield ± Valuation Multiple Change |
+
+**Supporting items** (used inside the formulas above, not shown as their own indicator)
+
+| Item | Formula |
+|---|---|
+| Gross Profit | Revenue − COGS |
+| EBIT | Revenue − Operating Expenses |
+| NOPAT | EBIT × (1 − Effective Tax Rate) |
+| FCF | CFO − CapEx |
+| Operating NWC | A/R + Inventory − A/P − Other Operating Current Liabilities/Assets as appropriate |
+| Invested Capital | Operating NWC + Net PP&E + Other Operating Assets − Operating Liabilities |
+| Capital Employed | Total Assets − Current Liabilities |
+| Enterprise Value | Market Cap + Debt + Preferred Stock + Minority Interest − Cash |
+| Book Value/Share | Common Equity ÷ Diluted Shares |
+| Terminal Value | OEₙ × (1+g) ÷ (r−g) |
+| CAGR | (Ending Value ÷ Beginning Value)^(1/n) − 1 |
+
 ### Data caveats
 
 - Every value depends on FMP's reported statement data; restated financials,
