@@ -111,15 +111,24 @@ st.sidebar.header("⚙️ Configuration")
 st.sidebar.subheader("💼 Watchlists")
 _watchlists = _load_watchlists()
 
+_wl_name_sel = None
+_wl_update_clicked = False
 if _watchlists:
     _wl_name_sel = st.sidebar.selectbox(
         "Saved watchlists", options=sorted(_watchlists.keys()), key="wl_select_name"
     )
-    _wl_c1, _wl_c2 = st.sidebar.columns(2)
+    _wl_c1, _wl_c2, _wl_c3 = st.sidebar.columns(3)
     if _wl_c1.button("📂 Load", key="wl_load_btn", use_container_width=True):
         st.session_state['_pending_watchlist_load'] = _watchlists[_wl_name_sel]
         st.rerun()
-    if _wl_c2.button("🗑️ Delete", key="wl_delete_btn", use_container_width=True):
+    # NOTE: like the Save button below, the actual overwrite is performed
+    # further down the script once this run's indicator/weight edits have
+    # been folded in — we only capture the click here.
+    _wl_update_clicked = _wl_c2.button(
+        "💾 Save changes", key="wl_update_btn", use_container_width=True,
+        help="Overwrite the selected watchlist with the current tickers, dates, indicators and criteria."
+    )
+    if _wl_c3.button("🗑️ Delete", key="wl_delete_btn", use_container_width=True):
         _watchlists.pop(_wl_name_sel, None)
         _save_watchlists(_watchlists)
         st.rerun()
@@ -134,7 +143,7 @@ _wl_new_name = st.sidebar.text_input(
 # run), so it captures this run's freshest edits rather than last run's
 # stale ind_config_store snapshot. We only capture the click here.
 _wl_save_clicked = st.sidebar.button(
-    "💾 Save current as watchlist", key="wl_save_btn", use_container_width=True,
+    "➕ Save as new watchlist", key="wl_save_btn", use_container_width=True,
     disabled=not (_wl_new_name.strip() and st.session_state.get('ta_ticker_list'))
 )
 
@@ -598,26 +607,35 @@ elif _total_w > 100:
 else:
     st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
 
-# ── Perform the watchlist save queued by the sidebar button above, now that
-# indicator_config/timeframe/dates/weights all reflect this run's edits ──────
+# ── Perform any watchlist save/update queued by the sidebar buttons above,
+# now that indicator_config/timeframe/dates/weights all reflect this run's
+# edits (not last run's stale snapshot) ───────────────────────────────────────
+def _current_watchlist_snapshot():
+    return {
+        'tickers':          list(st.session_state.get('ta_ticker_list', [])),
+        'start_date':       start_date.isoformat(),
+        'end_date':         end_date.isoformat(),
+        'timeframe':        timeframe,
+        'selected_labels':  _selected_labels,
+        'indicator_config': _copy.deepcopy(indicator_config),
+        'weights': {
+            'w_tech':    float(_w_tech),
+            'w_fg':      float(_w_fg) if _fg_active else 0.0,
+            'w_canslim': float(_w_canslim) if _canslim_enabled else 0.0,
+        },
+    }
+
 if _wl_save_clicked:
     _wl_name_final = st.session_state.get('wl_new_name', '').strip()
     if _wl_name_final:
-        _watchlists[_wl_name_final] = {
-            'tickers':          list(st.session_state.get('ta_ticker_list', [])),
-            'start_date':       start_date.isoformat(),
-            'end_date':         end_date.isoformat(),
-            'timeframe':        timeframe,
-            'selected_labels':  _selected_labels,
-            'indicator_config': _copy.deepcopy(indicator_config),
-            'weights': {
-                'w_tech':    float(_w_tech),
-                'w_fg':      float(_w_fg) if _fg_active else 0.0,
-                'w_canslim': float(_w_canslim) if _canslim_enabled else 0.0,
-            },
-        }
+        _watchlists[_wl_name_final] = _current_watchlist_snapshot()
         _save_watchlists(_watchlists)
         st.sidebar.success(f"Saved watchlist '{_wl_name_final}'")
+
+if _wl_update_clicked and _wl_name_sel:
+    _watchlists[_wl_name_sel] = _current_watchlist_snapshot()
+    _save_watchlists(_watchlists)
+    st.sidebar.success(f"Updated watchlist '{_wl_name_sel}'")
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
