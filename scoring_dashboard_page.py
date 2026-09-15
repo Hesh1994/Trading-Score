@@ -105,6 +105,64 @@ st.markdown('<hr style="border: none; border-top: 3px solid black; margin-top: 0
 
 st.sidebar.header("⚙️ Configuration")
 
+# ── Watchlists: save/load ticker universe + horizon/interval + indicators + criteria ──
+# Placed first in the sidebar (reads/writes session_state directly) so it's
+# usable regardless of where the other widgets below currently stand.
+st.sidebar.subheader("💼 Watchlists")
+_watchlists = _load_watchlists()
+
+if _watchlists:
+    _wl_name_sel = st.sidebar.selectbox(
+        "Saved watchlists", options=sorted(_watchlists.keys()), key="wl_select_name"
+    )
+    _wl_c1, _wl_c2 = st.sidebar.columns(2)
+    if _wl_c1.button("📂 Load", key="wl_load_btn", use_container_width=True):
+        st.session_state['_pending_watchlist_load'] = _watchlists[_wl_name_sel]
+        st.rerun()
+    if _wl_c2.button("🗑️ Delete", key="wl_delete_btn", use_container_width=True):
+        _watchlists.pop(_wl_name_sel, None)
+        _save_watchlists(_watchlists)
+        st.rerun()
+else:
+    st.sidebar.caption("No saved watchlists yet.")
+
+_wl_new_name = st.sidebar.text_input(
+    "Watchlist name", key="wl_new_name", placeholder="e.g. Tech Momentum"
+)
+if st.sidebar.button(
+    "💾 Save current as watchlist", key="wl_save_btn", use_container_width=True,
+    disabled=not (_wl_new_name.strip() and st.session_state.get('ta_ticker_list'))
+):
+    _wl_ind_config  = _copy.deepcopy(st.session_state.get('ind_config_store', INDICATORS_CONFIG))
+    _wl_fg_active   = _wl_ind_config.get('fear_greed', {}).get('enabled', False)
+    _wl_labels      = st.session_state.get(
+        'indicators_multiselect',
+        [cfg['label'] for cfg in _wl_ind_config.values() if cfg.get('enabled', True)]
+    )
+    _wl_canslim_on  = _fmp_module_ok and ("CANSLIM Score" in _wl_labels)
+    _watchlists[_wl_new_name.strip()] = {
+        'tickers':          list(st.session_state.get('ta_ticker_list', [])),
+        'start_date':       st.session_state['sd_date_input'].isoformat()
+                                if 'sd_date_input' in st.session_state
+                                else (dt.date.today() - dt.timedelta(days=365)).isoformat(),
+        'end_date':         st.session_state['ed_date_input'].isoformat()
+                                if 'ed_date_input' in st.session_state
+                                else dt.date.today().isoformat(),
+        'timeframe':        st.session_state.get('timeframe_select', 'Daily'),
+        'selected_labels':  _wl_labels,
+        'indicator_config': _wl_ind_config,
+        'weights': {
+            'w_tech':    float(st.session_state.get('w_tech', 50)),
+            'w_fg':      float(st.session_state.get('w_fg', 25)) if _wl_fg_active else 0.0,
+            'w_canslim': float(st.session_state.get('w_canslim', 25)) if _wl_canslim_on else 0.0,
+        },
+    }
+    _save_watchlists(_watchlists)
+    st.sidebar.success(f"Saved watchlist '{_wl_new_name.strip()}'")
+    st.rerun()
+
+st.sidebar.markdown("---")
+
 # ── FMP API Key — persistent key manager ─────────────────────────────────
 _KEY_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_fmp_key")
 
@@ -562,49 +620,6 @@ elif _total_w > 100:
     st.sidebar.error(_total_label + " — exceeds 100%")
 else:
     st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
-
-# ── Watchlists: save/load ticker universe + horizon/interval + indicators + criteria ──
-st.sidebar.subheader("💼 Watchlists")
-_watchlists = _load_watchlists()
-
-if _watchlists:
-    _wl_name_sel = st.sidebar.selectbox(
-        "Saved watchlists", options=sorted(_watchlists.keys()), key="wl_select_name"
-    )
-    _wl_c1, _wl_c2 = st.sidebar.columns(2)
-    if _wl_c1.button("📂 Load", key="wl_load_btn", use_container_width=True):
-        st.session_state['_pending_watchlist_load'] = _watchlists[_wl_name_sel]
-        st.rerun()
-    if _wl_c2.button("🗑️ Delete", key="wl_delete_btn", use_container_width=True):
-        _watchlists.pop(_wl_name_sel, None)
-        _save_watchlists(_watchlists)
-        st.rerun()
-else:
-    st.sidebar.caption("No saved watchlists yet.")
-
-_wl_new_name = st.sidebar.text_input(
-    "Watchlist name", key="wl_new_name", placeholder="e.g. Tech Momentum"
-)
-if st.sidebar.button(
-    "💾 Save current as watchlist", key="wl_save_btn", use_container_width=True,
-    disabled=not (_wl_new_name.strip() and st.session_state['ta_ticker_list'])
-):
-    _watchlists[_wl_new_name.strip()] = {
-        'tickers':          list(st.session_state['ta_ticker_list']),
-        'start_date':       start_date.isoformat(),
-        'end_date':         end_date.isoformat(),
-        'timeframe':        timeframe,
-        'selected_labels':  _selected_labels,
-        'indicator_config': _copy.deepcopy(st.session_state['ind_config_store']),
-        'weights': {
-            'w_tech':    float(_w_tech),
-            'w_fg':      float(_w_fg) if _fg_active else 0.0,
-            'w_canslim': float(_w_canslim) if _canslim_enabled else 0.0,
-        },
-    }
-    _save_watchlists(_watchlists)
-    st.sidebar.success(f"Saved watchlist '{_wl_new_name.strip()}'")
-    st.rerun()
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
