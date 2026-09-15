@@ -32,27 +32,61 @@ except ImportError:
 # WATCHLISTS — save/load a named universe + time horizon/interval + indicator
 # selection + scoring criteria, so it never has to be rebuilt by hand.
 #
-# This app runs on Streamlit Community Cloud, whose container filesystem is
-# ephemeral (wiped on every redeploy/sleep/restart) — a server-side JSON file
-# never actually survives there, and a third-party browser-localStorage
-# bridge is another moving part that can silently misbehave in that hosted
-# environment. So watchlists live in st.session_state (100% reliable within
-# a running session/tab, no I/O, no external component) plus an explicit
-# Export/Import to a .json file, which is the one mechanism guaranteed to
-# survive an app restart: the data lives in a file the user controls.
+# Saved to disk exactly like the Buffetology page's criteria file
+# (~/.buffetology_criteria.json) — a plain on-disk JSON file that Streamlit
+# reads back on the next session. The last-used watchlist is also
+# auto-applied on a brand new session, so a fresh page load already shows
+# your saved tickers/indicators/parameters without clicking Load.
 # ============================================================================
 
+_WATCHLIST_FILE  = os.path.join(os.path.expanduser("~"), ".streamlit_watchlists.json")
+_LAST_USED_FILE  = os.path.join(os.path.expanduser("~"), ".streamlit_last_watchlist.txt")
+
+
 def _load_watchlists():
-    return st.session_state.setdefault('_wl_store_data', {})
+    try:
+        if os.path.exists(_WATCHLIST_FILE):
+            with open(_WATCHLIST_FILE) as _f:
+                return json.load(_f)
+    except Exception:
+        pass
+    return {}
 
 
 def _save_watchlists(_data):
-    st.session_state['_wl_store_data'] = _data
+    with open(_WATCHLIST_FILE, 'w') as _f:
+        json.dump(_data, _f, indent=2)
+
+
+def _get_last_used_name():
+    try:
+        if os.path.exists(_LAST_USED_FILE):
+            with open(_LAST_USED_FILE) as _f:
+                return _f.read().strip()
+    except Exception:
+        pass
+    return None
+
+
+def _set_last_used_name(_name):
+    try:
+        with open(_LAST_USED_FILE, 'w') as _f:
+            _f.write(_name)
+    except Exception:
+        pass
 
 
 # Apply a queued watchlist load *before* any widgets are created, so their
 # key-backed session_state values reflect it once this rerun renders them.
 _pending_wl = st.session_state.pop('_pending_watchlist_load', None)
+if _pending_wl is None and 'ta_ticker_list' not in st.session_state:
+    # Brand new session (first script run) with nothing loaded yet — auto-
+    # restore the last-used watchlist so tickers/indicators/parameters come
+    # back on their own, the same way Buffetology's saved criteria do.
+    _auto_wl_store = _load_watchlists()
+    _auto_last_name = _get_last_used_name()
+    if _auto_last_name and _auto_last_name in _auto_wl_store:
+        _pending_wl = _auto_wl_store[_auto_last_name]
 if _pending_wl:
     st.session_state['ta_ticker_list'] = list(_pending_wl.get('tickers', []))
     if _pending_wl.get('start_date'):
@@ -119,6 +153,7 @@ if _watchlists:
     _wl_c1, _wl_c2, _wl_c3 = st.sidebar.columns(3)
     if _wl_c1.button("📂 Load", key="wl_load_btn", use_container_width=True):
         st.session_state['_pending_watchlist_load'] = _watchlists[_wl_name_sel]
+        _set_last_used_name(_wl_name_sel)
         st.rerun()
     # NOTE: like the Save button below, the actual overwrite is performed
     # further down the script once this run's indicator/weight edits have
@@ -130,13 +165,12 @@ if _watchlists:
     if _wl_c3.button("🗑️ Delete", key="wl_delete_btn", use_container_width=True):
         _watchlists.pop(_wl_name_sel, None)
         _save_watchlists(_watchlists)
+        if _get_last_used_name() == _wl_name_sel:
+            _set_last_used_name('')
         st.rerun()
+    st.sidebar.caption("💾 Saved to disk — the selected watchlist loads automatically next visit.")
 else:
     st.sidebar.caption("No saved watchlists yet.")
-
-if _watchlists and _wl_name_sel:
-    with st.sidebar.expander("🔍 Debug: raw saved data for selected watchlist", expanded=False):
-        st.json(_watchlists[_wl_name_sel])
 
 _wl_new_name = st.sidebar.text_input(
     "Watchlist name", key="wl_new_name", placeholder="e.g. Tech Momentum"
@@ -149,37 +183,6 @@ _wl_save_clicked = st.sidebar.button(
     "➕ Save as new watchlist", key="wl_save_btn", use_container_width=True,
     disabled=not (_wl_new_name.strip() and st.session_state.get('ta_ticker_list'))
 )
-
-# ── Export / Import — the ONLY mechanism that reliably survives an app
-# restart on this host: watchlists live in st.session_state (in-memory,
-# fully reliable while this tab/session is open) and Export/Import moves
-# them to/from a .json file the user keeps, independent of any server
-# disk or browser-storage bridge that might not work on this deployment.
-st.sidebar.caption("💡 Watchlists live in this session only. **Export** before closing the "
-                   "tab / app restarts, **Import** to bring them back.")
-st.sidebar.download_button(
-    "⬇️ Export watchlists (.json)", key="wl_export_btn", use_container_width=True,
-    disabled=not _watchlists,
-    data=json.dumps(_watchlists, indent=2),
-    file_name="trading_watchlists.json",
-    mime="application/json",
-)
-_wl_import_file = st.sidebar.file_uploader(
-    "⬆️ Import watchlists (.json)", key="wl_import_uploader", type="json"
-)
-if _wl_import_file is not None:
-    try:
-        _imported = json.load(_wl_import_file)
-        if isinstance(_imported, dict):
-            _watchlists.update(_imported)
-            _save_watchlists(_watchlists)
-            st.session_state.pop('wl_import_uploader', None)
-            st.sidebar.success(f"Imported {len(_imported)} watchlist(s).")
-            st.rerun()
-        else:
-            st.sidebar.error("That file doesn't look like a watchlists export.")
-    except Exception as _e:
-        st.sidebar.error(f"Could not import: {_e}")
 
 st.sidebar.markdown("---")
 
@@ -664,12 +667,14 @@ if _wl_save_clicked:
     if _wl_name_final:
         _watchlists[_wl_name_final] = _current_watchlist_snapshot()
         _save_watchlists(_watchlists)
-        st.sidebar.success(f"Saved watchlist '{_wl_name_final}'")
+        _set_last_used_name(_wl_name_final)
+        st.sidebar.success(f"Saved watchlist '{_wl_name_final}' — loads automatically next visit.")
 
 if _wl_update_clicked and _wl_name_sel:
     _watchlists[_wl_name_sel] = _current_watchlist_snapshot()
     _save_watchlists(_watchlists)
-    st.sidebar.success(f"Updated watchlist '{_wl_name_sel}'")
+    _set_last_used_name(_wl_name_sel)
+    st.sidebar.success(f"Updated watchlist '{_wl_name_sel}' — loads automatically next visit.")
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
