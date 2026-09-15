@@ -135,6 +135,11 @@ if _watchlists:
 else:
     st.sidebar.caption("No saved watchlists yet.")
 
+st.sidebar.caption(f"📄 Store: `{_WATCHLIST_FILE}`")
+if _watchlists and _wl_name_sel:
+    with st.sidebar.expander("🔍 Debug: raw saved data for selected watchlist", expanded=False):
+        st.json(_watchlists[_wl_name_sel])
+
 _wl_new_name = st.sidebar.text_input(
     "Watchlist name", key="wl_new_name", placeholder="e.g. Tech Momentum"
 )
