@@ -129,37 +129,14 @@ else:
 _wl_new_name = st.sidebar.text_input(
     "Watchlist name", key="wl_new_name", placeholder="e.g. Tech Momentum"
 )
-if st.sidebar.button(
+# NOTE: the actual save is performed further down the script (after the
+# indicator-parameter widgets and model weights have been processed for this
+# run), so it captures this run's freshest edits rather than last run's
+# stale ind_config_store snapshot. We only capture the click here.
+_wl_save_clicked = st.sidebar.button(
     "💾 Save current as watchlist", key="wl_save_btn", use_container_width=True,
     disabled=not (_wl_new_name.strip() and st.session_state.get('ta_ticker_list'))
-):
-    _wl_ind_config  = _copy.deepcopy(st.session_state.get('ind_config_store', INDICATORS_CONFIG))
-    _wl_fg_active   = _wl_ind_config.get('fear_greed', {}).get('enabled', False)
-    _wl_labels      = st.session_state.get(
-        'indicators_multiselect',
-        [cfg['label'] for cfg in _wl_ind_config.values() if cfg.get('enabled', True)]
-    )
-    _wl_canslim_on  = _fmp_module_ok and ("CANSLIM Score" in _wl_labels)
-    _watchlists[_wl_new_name.strip()] = {
-        'tickers':          list(st.session_state.get('ta_ticker_list', [])),
-        'start_date':       st.session_state['sd_date_input'].isoformat()
-                                if 'sd_date_input' in st.session_state
-                                else (dt.date.today() - dt.timedelta(days=365)).isoformat(),
-        'end_date':         st.session_state['ed_date_input'].isoformat()
-                                if 'ed_date_input' in st.session_state
-                                else dt.date.today().isoformat(),
-        'timeframe':        st.session_state.get('timeframe_select', 'Daily'),
-        'selected_labels':  _wl_labels,
-        'indicator_config': _wl_ind_config,
-        'weights': {
-            'w_tech':    float(st.session_state.get('w_tech', 50)),
-            'w_fg':      float(st.session_state.get('w_fg', 25)) if _wl_fg_active else 0.0,
-            'w_canslim': float(st.session_state.get('w_canslim', 25)) if _wl_canslim_on else 0.0,
-        },
-    }
-    _save_watchlists(_watchlists)
-    st.sidebar.success(f"Saved watchlist '{_wl_new_name.strip()}'")
-    st.rerun()
+)
 
 st.sidebar.markdown("---")
 
@@ -620,6 +597,27 @@ elif _total_w > 100:
     st.sidebar.error(_total_label + " — exceeds 100%")
 else:
     st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
+
+# ── Perform the watchlist save queued by the sidebar button above, now that
+# indicator_config/timeframe/dates/weights all reflect this run's edits ──────
+if _wl_save_clicked:
+    _wl_name_final = st.session_state.get('wl_new_name', '').strip()
+    if _wl_name_final:
+        _watchlists[_wl_name_final] = {
+            'tickers':          list(st.session_state.get('ta_ticker_list', [])),
+            'start_date':       start_date.isoformat(),
+            'end_date':         end_date.isoformat(),
+            'timeframe':        timeframe,
+            'selected_labels':  _selected_labels,
+            'indicator_config': _copy.deepcopy(indicator_config),
+            'weights': {
+                'w_tech':    float(_w_tech),
+                'w_fg':      float(_w_fg) if _fg_active else 0.0,
+                'w_canslim': float(_w_canslim) if _canslim_enabled else 0.0,
+            },
+        }
+        _save_watchlists(_watchlists)
+        st.sidebar.success(f"Saved watchlist '{_wl_name_final}'")
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
