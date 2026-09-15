@@ -11,6 +11,7 @@ import datetime as dt
 import requests
 import io
 import sys, os, json
+import copy as _copy
 _root = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 if _root not in sys.path:
     sys.path.insert(0, _root)
@@ -26,6 +27,58 @@ try:
     _fmp_module_ok = True
 except ImportError:
     _fmp_module_ok = False
+
+# ============================================================================
+# WATCHLISTS — save/load a named universe + time horizon/interval + indicator
+# selection + scoring criteria, so it never has to be rebuilt by hand.
+# ============================================================================
+
+_WATCHLIST_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_watchlists.json")
+
+
+def _load_watchlists():
+    try:
+        if os.path.exists(_WATCHLIST_FILE):
+            with open(_WATCHLIST_FILE) as _f:
+                return json.load(_f)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_watchlists(_data):
+    with open(_WATCHLIST_FILE, 'w') as _f:
+        json.dump(_data, _f, indent=2)
+
+
+# Apply a queued watchlist load *before* any widgets are created, so their
+# key-backed session_state values reflect it once this rerun renders them.
+_pending_wl = st.session_state.pop('_pending_watchlist_load', None)
+if _pending_wl:
+    st.session_state['ta_ticker_list'] = list(_pending_wl.get('tickers', []))
+    if _pending_wl.get('start_date'):
+        st.session_state['sd_date_input'] = dt.date.fromisoformat(_pending_wl['start_date'])
+    if _pending_wl.get('end_date'):
+        st.session_state['ed_date_input'] = dt.date.fromisoformat(_pending_wl['end_date'])
+    if _pending_wl.get('timeframe'):
+        st.session_state['timeframe_select'] = _pending_wl['timeframe']
+    if 'indicator_config' in _pending_wl:
+        st.session_state['ind_config_store'] = _copy.deepcopy(_pending_wl['indicator_config'])
+        # Drop stale per-indicator widget keys (e.g. "rsi_period", "sma_buy_score")
+        # so they re-read their value from the freshly loaded store.
+        _ind_keys = list(_pending_wl['indicator_config'].keys())
+        for _sk in list(st.session_state.keys()):
+            if any(_sk.startswith(f"{_ik}_") for _ik in _ind_keys):
+                del st.session_state[_sk]
+    if 'selected_labels' in _pending_wl:
+        st.session_state['indicators_multiselect'] = _pending_wl['selected_labels']
+    _wl_weights = _pending_wl.get('weights', {})
+    if 'w_tech' in _wl_weights:
+        st.session_state['w_tech'] = int(_wl_weights['w_tech'])
+    if 'w_fg' in _wl_weights:
+        st.session_state['w_fg'] = int(_wl_weights['w_fg'])
+    if 'w_canslim' in _wl_weights:
+        st.session_state['w_canslim'] = int(_wl_weights['w_canslim'])
 
 # ============================================================================
 # PAGE SETUP
@@ -112,14 +165,16 @@ with col1:
         "Start Date",
         value=dt.date.today() - dt.timedelta(days=365),
         min_value=dt.date(2010, 1, 1),
-        max_value=dt.date.today()
+        max_value=dt.date.today(),
+        key="sd_date_input"
     )
 with col2:
     end_date = st.date_input(
         "End Date",
         value=dt.date.today(),
         min_value=start_date,
-        max_value=dt.date.today()
+        max_value=dt.date.today(),
+        key="ed_date_input"
     )
 
 # Timeframe selection
@@ -127,7 +182,8 @@ st.sidebar.subheader("⏱️ Timeframe")
 timeframe = st.sidebar.selectbox(
     "Select Timeframe",
     ["Daily", "Weekly", "Monthly"],
-    index=0
+    index=0,
+    key="timeframe_select"
 )
 
 # ── Symbol Selection ─────────────────────────────────────────────────────
@@ -309,8 +365,6 @@ sell_threshold = 3.0
 
 # Indicator Configuration
 st.sidebar.subheader("📈 Indicators to Include")
-
-import copy as _copy
 
 # ── Session-state-backed config store ─────────────────────────────────────────
 # Streamlit removes widget keys from session_state when their widgets are not
@@ -508,6 +562,49 @@ elif _total_w > 100:
     st.sidebar.error(_total_label + " — exceeds 100%")
 else:
     st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
+
+# ── Watchlists: save/load ticker universe + horizon/interval + indicators + criteria ──
+st.sidebar.subheader("💼 Watchlists")
+_watchlists = _load_watchlists()
+
+if _watchlists:
+    _wl_name_sel = st.sidebar.selectbox(
+        "Saved watchlists", options=sorted(_watchlists.keys()), key="wl_select_name"
+    )
+    _wl_c1, _wl_c2 = st.sidebar.columns(2)
+    if _wl_c1.button("📂 Load", key="wl_load_btn", use_container_width=True):
+        st.session_state['_pending_watchlist_load'] = _watchlists[_wl_name_sel]
+        st.rerun()
+    if _wl_c2.button("🗑️ Delete", key="wl_delete_btn", use_container_width=True):
+        _watchlists.pop(_wl_name_sel, None)
+        _save_watchlists(_watchlists)
+        st.rerun()
+else:
+    st.sidebar.caption("No saved watchlists yet.")
+
+_wl_new_name = st.sidebar.text_input(
+    "Watchlist name", key="wl_new_name", placeholder="e.g. Tech Momentum"
+)
+if st.sidebar.button(
+    "💾 Save current as watchlist", key="wl_save_btn", use_container_width=True,
+    disabled=not (_wl_new_name.strip() and st.session_state['ta_ticker_list'])
+):
+    _watchlists[_wl_new_name.strip()] = {
+        'tickers':          list(st.session_state['ta_ticker_list']),
+        'start_date':       start_date.isoformat(),
+        'end_date':         end_date.isoformat(),
+        'timeframe':        timeframe,
+        'selected_labels':  _selected_labels,
+        'indicator_config': _copy.deepcopy(st.session_state['ind_config_store']),
+        'weights': {
+            'w_tech':    float(_w_tech),
+            'w_fg':      float(_w_fg) if _fg_active else 0.0,
+            'w_canslim': float(_w_canslim) if _canslim_enabled else 0.0,
+        },
+    }
+    _save_watchlists(_watchlists)
+    st.sidebar.success(f"Saved watchlist '{_wl_new_name.strip()}'")
+    st.rerun()
 
 def _final_score(ticker, scores, fg_scores, canslim_scores):
     _ws, _wt = 0.0, 0.0
