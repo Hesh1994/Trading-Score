@@ -10,7 +10,7 @@ import yfinance as yf
 import datetime as dt
 import requests
 import io
-import sys, os, json
+import sys, os, json, re
 import copy as _copy
 _root = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 if _root not in sys.path:
@@ -717,19 +717,61 @@ if fmp_key and _fmp_module_ok:
 
 st.subheader("📋 Tickers to Analyse")
 
-# ── Manual add ───────────────────────────────────────────────────────────────
+# ── Manual add (accepts multiple tickers at once) ─────────────────────────────
 _add_col, _btn_col = st.columns([4, 1])
 with _add_col:
-    _manual_sym = st.text_input(
-        "Add ticker manually", placeholder="e.g. AAPL or 2222.SR",
-        key="ta_main_manual_add", label_visibility="collapsed"
+    _manual_syms = st.text_area(
+        "Add tickers manually", placeholder="e.g. AAPL, MSFT, 2222.SR  (comma, space or newline separated)",
+        key="ta_main_manual_add", label_visibility="collapsed", height=68
     )
 with _btn_col:
     if st.button("➕ Add", key="ta_main_add_btn", use_container_width=True):
-        _s = _manual_sym.strip().upper()
-        if _s and _s not in st.session_state['ta_ticker_list']:
-            st.session_state['ta_ticker_list'].append(_s)
+        _new_syms = [s.strip().upper() for s in re.split(r"[,\s]+", _manual_syms) if s.strip()]
+        _before = len(st.session_state['ta_ticker_list'])
+        for _s in _new_syms:
+            if _s not in st.session_state['ta_ticker_list']:
+                st.session_state['ta_ticker_list'].append(_s)
+        _added = len(st.session_state['ta_ticker_list']) - _before
+        if _added:
+            st.session_state.pop('ta_main_manual_add', None)
+            st.success(f"Added {_added} ticker(s)")
             st.rerun()
+
+# ── CSV upload ─────────────────────────────────────────────────────────────────
+_csv_file = st.file_uploader(
+    "📤 Upload tickers from CSV", type="csv", key="ta_csv_uploader",
+    help="A column named 'ticker'/'symbol' is used if present, otherwise the first column."
+)
+if _csv_file is not None:
+    _csv_sig = (_csv_file.name, _csv_file.size)
+    if st.session_state.get('ta_csv_last_sig') != _csv_sig:
+        try:
+            _csv_df = pd.read_csv(_csv_file)
+            _named_col = next(
+                (c for c in _csv_df.columns if str(c).strip().lower() in ('ticker', 'tickers', 'symbol', 'symbols')),
+                None
+            )
+            if _named_col is not None:
+                _col = _named_col
+            elif len(_csv_df.columns) == 1 and re.fullmatch(r"[A-Za-z0-9.\-]{1,12}", str(_csv_df.columns[0]).strip()):
+                # Headerless single-column file — the first ticker would
+                # otherwise be silently consumed as the column name.
+                _csv_file.seek(0)
+                _csv_df = pd.read_csv(_csv_file, header=None)
+                _col = _csv_df.columns[0]
+            else:
+                _col = _csv_df.columns[0]
+            _csv_syms = [str(v).strip().upper() for v in _csv_df[_col].dropna().tolist() if str(v).strip()]
+            _before = len(st.session_state['ta_ticker_list'])
+            for _s in _csv_syms:
+                if _s not in st.session_state['ta_ticker_list']:
+                    st.session_state['ta_ticker_list'].append(_s)
+            _added = len(st.session_state['ta_ticker_list']) - _before
+            st.session_state['ta_csv_last_sig'] = _csv_sig
+            st.success(f"Added {_added} ticker(s) from '{_csv_file.name}' (column: {_col})")
+            st.rerun()
+        except Exception as _e:
+            st.error(f"Could not read CSV: {_e}")
 
 # Placeholder for loading spinner — positioned above the table so it appears above it
 _status_ph = st.empty()
