@@ -32,30 +32,22 @@ except ImportError:
 # WATCHLISTS — save/load a named universe + time horizon/interval + indicator
 # selection + scoring criteria, so it never has to be rebuilt by hand.
 #
-# Stored in the *browser's* localStorage (not a server-side file): this app
-# runs on Streamlit Community Cloud, whose container filesystem is ephemeral
-# and gets wiped on every redeploy/sleep/restart, so a server-side JSON file
-# never survives. localStorage lives on the visitor's own device instead.
+# This app runs on Streamlit Community Cloud, whose container filesystem is
+# ephemeral (wiped on every redeploy/sleep/restart) — a server-side JSON file
+# never actually survives there, and a third-party browser-localStorage
+# bridge is another moving part that can silently misbehave in that hosted
+# environment. So watchlists live in st.session_state (100% reliable within
+# a running session/tab, no I/O, no external component) plus an explicit
+# Export/Import to a .json file, which is the one mechanism guaranteed to
+# survive an app restart: the data lives in a file the user controls.
 # ============================================================================
 
-from streamlit_local_storage import LocalStorage
-
-_WATCHLISTS_LS_KEY = "trading_watchlists"
-_ls_store = LocalStorage(key="wl_local_storage")
-
-
 def _load_watchlists():
-    raw = _ls_store.getItem(_WATCHLISTS_LS_KEY)
-    if not raw:
-        return {}
-    try:
-        return json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:
-        return {}
+    return st.session_state.setdefault('_wl_store_data', {})
 
 
 def _save_watchlists(_data):
-    _ls_store.setItem(_WATCHLISTS_LS_KEY, json.dumps(_data), key="wl_ls_set")
+    st.session_state['_wl_store_data'] = _data
 
 
 # Apply a queued watchlist load *before* any widgets are created, so their
@@ -142,7 +134,6 @@ if _watchlists:
 else:
     st.sidebar.caption("No saved watchlists yet.")
 
-st.sidebar.caption("📄 Stored in your browser's local storage (survives app restarts, per-browser).")
 if _watchlists and _wl_name_sel:
     with st.sidebar.expander("🔍 Debug: raw saved data for selected watchlist", expanded=False):
         st.json(_watchlists[_wl_name_sel])
@@ -158,6 +149,37 @@ _wl_save_clicked = st.sidebar.button(
     "➕ Save as new watchlist", key="wl_save_btn", use_container_width=True,
     disabled=not (_wl_new_name.strip() and st.session_state.get('ta_ticker_list'))
 )
+
+# ── Export / Import — the ONLY mechanism that reliably survives an app
+# restart on this host: watchlists live in st.session_state (in-memory,
+# fully reliable while this tab/session is open) and Export/Import moves
+# them to/from a .json file the user keeps, independent of any server
+# disk or browser-storage bridge that might not work on this deployment.
+st.sidebar.caption("💡 Watchlists live in this session only. **Export** before closing the "
+                   "tab / app restarts, **Import** to bring them back.")
+st.sidebar.download_button(
+    "⬇️ Export watchlists (.json)", key="wl_export_btn", use_container_width=True,
+    disabled=not _watchlists,
+    data=json.dumps(_watchlists, indent=2),
+    file_name="trading_watchlists.json",
+    mime="application/json",
+)
+_wl_import_file = st.sidebar.file_uploader(
+    "⬆️ Import watchlists (.json)", key="wl_import_uploader", type="json"
+)
+if _wl_import_file is not None:
+    try:
+        _imported = json.load(_wl_import_file)
+        if isinstance(_imported, dict):
+            _watchlists.update(_imported)
+            _save_watchlists(_watchlists)
+            st.session_state.pop('wl_import_uploader', None)
+            st.sidebar.success(f"Imported {len(_imported)} watchlist(s).")
+            st.rerun()
+        else:
+            st.sidebar.error("That file doesn't look like a watchlists export.")
+    except Exception as _e:
+        st.sidebar.error(f"Could not import: {_e}")
 
 st.sidebar.markdown("---")
 
