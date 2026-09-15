@@ -31,24 +31,31 @@ except ImportError:
 # ============================================================================
 # WATCHLISTS — save/load a named universe + time horizon/interval + indicator
 # selection + scoring criteria, so it never has to be rebuilt by hand.
+#
+# Stored in the *browser's* localStorage (not a server-side file): this app
+# runs on Streamlit Community Cloud, whose container filesystem is ephemeral
+# and gets wiped on every redeploy/sleep/restart, so a server-side JSON file
+# never survives. localStorage lives on the visitor's own device instead.
 # ============================================================================
 
-_WATCHLIST_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_watchlists.json")
+from streamlit_local_storage import LocalStorage
+
+_WATCHLISTS_LS_KEY = "trading_watchlists"
+_ls_store = LocalStorage(key="wl_local_storage")
 
 
 def _load_watchlists():
+    raw = _ls_store.getItem(_WATCHLISTS_LS_KEY)
+    if not raw:
+        return {}
     try:
-        if os.path.exists(_WATCHLIST_FILE):
-            with open(_WATCHLIST_FILE) as _f:
-                return json.load(_f)
+        return json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
-        pass
-    return {}
+        return {}
 
 
 def _save_watchlists(_data):
-    with open(_WATCHLIST_FILE, 'w') as _f:
-        json.dump(_data, _f, indent=2)
+    _ls_store.setItem(_WATCHLISTS_LS_KEY, json.dumps(_data), key="wl_ls_set")
 
 
 # Apply a queued watchlist load *before* any widgets are created, so their
@@ -135,7 +142,7 @@ if _watchlists:
 else:
     st.sidebar.caption("No saved watchlists yet.")
 
-st.sidebar.caption(f"📄 Store: `{_WATCHLIST_FILE}`")
+st.sidebar.caption("📄 Stored in your browser's local storage (survives app restarts, per-browser).")
 if _watchlists and _wl_name_sel:
     with st.sidebar.expander("🔍 Debug: raw saved data for selected watchlist", expanded=False):
         st.json(_watchlists[_wl_name_sel])
