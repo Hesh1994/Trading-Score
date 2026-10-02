@@ -824,6 +824,8 @@ if st.session_state['ta_ticker_list']:
 
     # ── Toggle buttons + Clear all ───────────────────────────────────────────
     _b1, _b2, _b3 = st.columns([2, 2, 2])
+    if not _fg_active:
+        _show_5d_fg = False
     with _b1:
         if st.button(
             "Collapse 5D ▲" if _show_5d else "Extend Technical Score to 5D ▼",
@@ -833,7 +835,7 @@ if st.session_state['ta_ticker_list']:
             st.session_state['show_5d_tech'] = not _show_5d
             st.rerun()
     with _b2:
-        if st.button(
+        if _fg_active and st.button(
             "Collapse F&G 5D ▲" if _show_5d_fg else "Extend Fear & Greed to 5D ▼",
             key="toggle_5d_fg_btn", use_container_width=True,
             help="Show / hide 5-day Fear & Greed evolution",
@@ -869,7 +871,9 @@ if st.session_state['ta_ticker_list']:
                 for t in _visible_tickers
             ]
 
-        if _n_fg:
+        if not _fg_active:
+            pass
+        elif _n_fg:
             for _i, _lbl in enumerate(_day_labels):
                 _mi_tuples.append(('Fear & Greed', _lbl))
                 _mi_data[('Fear & Greed', _lbl)] = [
@@ -910,8 +914,9 @@ if st.session_state['ta_ticker_list']:
             'Remove':                [False] * len(_visible_tickers),
             'Ticker':                _visible_tickers,
             'Total Technical Score': [_scores.get(t) for t in _visible_tickers],
-            'Fear & Greed':          [_fg_scores.get(t) for t in _visible_tickers],
         }
+        if _fg_active:
+            _tbl_data['Fear & Greed'] = [_fg_scores.get(t) for t in _visible_tickers]
         if _canslim_enabled:
             _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _visible_tickers]
         _tbl_data['Final Score'] = [
