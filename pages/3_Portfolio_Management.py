@@ -56,7 +56,7 @@ _final_scores  = st.session_state.get('ta_final_scores', {})
 _wts           = st.session_state.get('ta_score_weights', {})
 
 # Recompute final scores from components if not saved (e.g. after fresh deployment)
-if not _final_scores and (_ta_scores or _cs_scores or _fg_scores):
+if not _final_scores and _wts.get('use_weights', True) and (_ta_scores or _cs_scores or _fg_scores):
     _wt = _wts.get('w_tech', 1.0)
     _wc = _wts.get('w_canslim', 0.0)
     _wf = _wts.get('w_fg', 0.0)

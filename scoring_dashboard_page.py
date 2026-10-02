@@ -111,6 +111,12 @@ if _pending_wl:
         st.session_state['w_fg'] = int(_wl_weights['w_fg'])
     if 'w_canslim' in _wl_weights:
         st.session_state['w_canslim'] = int(_wl_weights['w_canslim'])
+    if 'use_weights' in _pending_wl:
+        st.session_state['use_model_weights'] = bool(_pending_wl['use_weights'])
+    if 'use_accel' in _pending_wl:
+        st.session_state['use_accel'] = bool(_pending_wl['use_accel'])
+    if 'accel_n' in _pending_wl:
+        st.session_state['accel_n_obs'] = int(_pending_wl['accel_n'])
 
 # ============================================================================
 # PAGE SETUP
@@ -481,15 +487,22 @@ _selected_labels = st.sidebar.multiselect(
 )
 _canslim_enabled = _fmp_module_ok and (_CANSLIM_LABEL in _selected_labels)
 
-_accel_n = int(st.sidebar.number_input(
-    "Acceleration observations",
-    min_value=2, max_value=20, value=3, step=1, key="accel_n_obs",
-    help="A score cell turns green when its value rose continuously over the "
-         "last N observations (each one higher than the one before). "
-         "Technical: score if 2+ technical indicators are selected, otherwise "
-         "the single indicator's underlying value. Fear & Greed: index value. "
-         "Final: final score. CANSLIM: quarterly CANSLIM score.",
-))
+_use_accel = st.sidebar.checkbox(
+    "Show acceleration filter", value=False, key="use_accel",
+    help="Highlight score cells in green when the value rose continuously "
+         "over the last N observations.",
+)
+_accel_n = 3
+if _use_accel:
+    _accel_n = int(st.sidebar.number_input(
+        "Acceleration observations",
+        min_value=2, max_value=20, value=3, step=1, key="accel_n_obs",
+        help="A score cell turns green when its value rose continuously over the "
+             "last N observations (each one higher than the one before). "
+             "Technical: score if 2+ technical indicators are selected, otherwise "
+             "the single indicator's underlying value. Fear & Greed: index value. "
+             "Final: final score. CANSLIM: quarterly CANSLIM score.",
+    ))
 
 included_indicators = {}
 for ind_key in _all_ind_keys:
@@ -621,20 +634,25 @@ st.session_state['ind_config_store'] = _copy.deepcopy(indicator_config)
 # ── Model Weights ─────────────────────────────────────────────────────────────
 st.sidebar.subheader("⚖️ Model Weights")
 _fg_active = indicator_config.get('fear_greed', {}).get('enabled', False)
-
-_w_tech = st.sidebar.number_input(
-    "Total Technical Score %", min_value=0, max_value=100, value=50, step=5, key="w_tech"
+_use_weights = st.sidebar.checkbox(
+    "Use model weights", value=False, key="use_model_weights",
+    help="Show the weight inputs and calculate the weighted Final Score.",
 )
-_w_fg = 0
-if _fg_active:
-    _w_fg = st.sidebar.number_input(
-        "Fear & Greed %", min_value=0, max_value=100, value=25, step=5, key="w_fg"
+
+_w_tech = _w_fg = _w_canslim = 0
+if _use_weights:
+    _w_tech = st.sidebar.number_input(
+        "Total Technical Score %", min_value=0, max_value=100, value=50, step=5, key="w_tech"
     )
-_w_canslim = 0
+    if _fg_active:
+        _w_fg = st.sidebar.number_input(
+            "Fear & Greed %", min_value=0, max_value=100, value=25, step=5, key="w_fg"
+        )
+    if _canslim_enabled:
+        _w_canslim = st.sidebar.number_input(
+            "CANSLIM %", min_value=0, max_value=100, value=25, step=5, key="w_canslim"
+        )
 if _canslim_enabled:
-    _w_canslim = st.sidebar.number_input(
-        "CANSLIM %", min_value=0, max_value=100, value=25, step=5, key="w_canslim"
-    )
     # Show CANSLIM data status
     _cs_adj = st.session_state.get('canslim_adjusted_scores', {})
     if _cs_adj:
@@ -644,14 +662,15 @@ if _canslim_enabled:
     else:
         st.sidebar.warning("⚠️ No CANSLIM scores yet — run the **CANSLIM Dashboard** first, then come back here.")
 
-_total_w = _w_tech + _w_fg + _w_canslim
-_total_label = f"Total: {_total_w}%"
-if _total_w == 100:
-    st.sidebar.success(_total_label)
-elif _total_w > 100:
-    st.sidebar.error(_total_label + " — exceeds 100%")
-else:
-    st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
+if _use_weights:
+    _total_w = _w_tech + _w_fg + _w_canslim
+    _total_label = f"Total: {_total_w}%"
+    if _total_w == 100:
+        st.sidebar.success(_total_label)
+    elif _total_w > 100:
+        st.sidebar.error(_total_label + " — exceeds 100%")
+    else:
+        st.sidebar.warning(_total_label + f" — {100 - _total_w}% remaining")
 
 # ── Perform any watchlist save/update queued by the sidebar buttons above,
 # now that indicator_config/timeframe/dates/weights all reflect this run's
@@ -664,6 +683,9 @@ def _current_watchlist_snapshot():
         'timeframe':        timeframe,
         'selected_labels':  _selected_labels,
         'indicator_config': _copy.deepcopy(indicator_config),
+        'use_weights':      bool(_use_weights),
+        'use_accel':        bool(_use_accel),
+        'accel_n':          int(_accel_n),
         'weights': {
             'w_tech':    float(_w_tech),
             'w_fg':      float(_w_fg) if _fg_active else 0.0,
@@ -686,6 +708,8 @@ if _wl_update_clicked and _wl_name_sel:
     st.sidebar.success(f"Updated watchlist '{_wl_name_sel}' — loads automatically next visit.")
 
 def _combine_final(_ts, _fg, _cs):
+    if not _use_weights:
+        return None
     _ws, _wt = 0.0, 0.0
     if _ts is not None and _w_tech > 0:
         _ws += _ts * _w_tech;  _wt += _w_tech
@@ -936,10 +960,12 @@ if st.session_state['ta_ticker_list']:
             if _col in df.columns:
                 _css[_col] = [_ACC_ON if _accel[t][_key] else _ACC_OFF
                               for t in _visible_tickers]
+        if not _use_accel:
+            return df
         return df.style.apply(lambda _d: _css, axis=None)
 
     _hist_len = len(next(iter(_acc_tech_h.values()), []) or [])
-    if _acc_tech_h and _hist_len < _accel_n:
+    if _use_accel and _acc_tech_h and _hist_len < _accel_n:
         st.info(f"Acceleration needs {_accel_n} observations but the last run "
                 f"computed {_hist_len}. Run the analysis again to update the highlighting.")
     _acc_basis = (f"{indicator_config.get(_acc_keys[0], {}).get('label', _acc_keys[0])} value"
@@ -950,7 +976,7 @@ if st.session_state['ta_ticker_list']:
         _acc_cap += "; Fear & Greed: index value"
     if _canslim_enabled:
         _acc_cap += "; CANSLIM: quarterly score"
-    _acc_cap += "; Final: final score)."
+    _acc_cap += "; Final: final score)." if _use_weights else ")."
 
     if _n_tts or _n_fg:
         # ── 5D active: MultiIndex DataFrame → native merged-header rendering ──────
@@ -997,12 +1023,13 @@ if st.session_state['ta_ticker_list']:
                 for t in _visible_tickers
             ]
 
-        _mi_tuples.append(('', 'Final Score'))
-        _mi_data[('', 'Final Score')] = [
-            f"{_final_score(t, _scores, _fg_scores, _canslim_scores):.1f}%"
-            if _final_score(t, _scores, _fg_scores, _canslim_scores) is not None else ''
-            for t in _visible_tickers
-        ]
+        if _use_weights:
+            _mi_tuples.append(('', 'Final Score'))
+            _mi_data[('', 'Final Score')] = [
+                f"{_final_score(t, _scores, _fg_scores, _canslim_scores):.1f}%"
+                if _final_score(t, _scores, _fg_scores, _canslim_scores) is not None else ''
+                for t in _visible_tickers
+            ]
 
         _mi_df = pd.DataFrame(_mi_data)
         _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
@@ -1014,7 +1041,8 @@ if st.session_state['ta_ticker_list']:
         if _fg_active:
             _mi_map[('Fear & Greed', _day_labels[-1]) if _n_fg else ('', 'Fear & Greed')] = 'fg'
         st.dataframe(_accel_styler(_mi_df, _mi_map), use_container_width=True, hide_index=True)
-        st.caption(_acc_cap)
+        if _use_accel:
+            st.caption(_acc_cap)
 
         st.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
 
@@ -1029,9 +1057,10 @@ if st.session_state['ta_ticker_list']:
             _tbl_data['Fear & Greed'] = [_fg_scores.get(t) for t in _visible_tickers]
         if _canslim_enabled:
             _tbl_data['CANSLIM Score'] = [_canslim_scores.get(t) for t in _visible_tickers]
-        _tbl_data['Final Score'] = [
-            _final_score(t, _scores, _fg_scores, _canslim_scores) for t in _visible_tickers
-        ]
+        if _use_weights:
+            _tbl_data['Final Score'] = [
+                _final_score(t, _scores, _fg_scores, _canslim_scores) for t in _visible_tickers
+            ]
         _col_cfg = {
             'Remove':                st.column_config.CheckboxColumn('✖ Remove', default=False),
             'Ticker':                st.column_config.TextColumn('Ticker', disabled=True),
@@ -1050,7 +1079,8 @@ if st.session_state['ta_ticker_list']:
             use_container_width=True,
             hide_index=True, column_config=_col_cfg, key='ta_ticker_table',
         )
-        st.caption(_acc_cap)
+        if _use_accel:
+            st.caption(_acc_cap)
         _kept_visible = _edited[~_edited['Remove']]['Ticker'].tolist()
         _removed = set(_visible_tickers) - set(_kept_visible)
         if _removed:
@@ -1437,6 +1467,7 @@ if _run_btn_header:
         'w_canslim':  float(_w_canslim) if _canslim_enabled else 0.0,
         'fg_active':  bool(_fg_active),
         'canslim_on': bool(_canslim_enabled),
+        'use_weights': bool(_use_weights),
     }
     _all_tickers_now = list(dict.fromkeys(st.session_state['ta_ticker_list']))
     _sc_now   = st.session_state.get('ta_scores', {})
