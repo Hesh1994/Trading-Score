@@ -296,6 +296,14 @@ st.sidebar.divider()
 
 ticker_input = ", ".join(st.session_state['canslim_ticker_list'])
 
+canslim_periods = st.sidebar.number_input(
+    "CANSLIM periods to calculate (quarters)",
+    min_value=4, max_value=12, value=4, step=1, key="canslim_periods",
+    help="Scores each of the last N quarters so the Scoring Dashboard can test "
+         "CANSLIM acceleration (a continuous rise in score). Each extra period "
+         "needs one more quarter of history from FMP.",
+)
+
 st.sidebar.markdown(
     """
     **Scoring criteria (10 pts each)**
@@ -346,7 +354,8 @@ if run_btn:
         st.stop()
 
     with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
-        st.session_state['canslim_results'] = score_canslim_universe(symbols, fmp_api_key=fmp_key or None)
+        st.session_state['canslim_results'] = score_canslim_universe(
+            symbols, fmp_api_key=fmp_key or None, n_periods=int(canslim_periods))
         st.session_state['canslim_source']  = "FMP API" if fmp_key else "yfinance"
     st.rerun()
 
@@ -414,6 +423,15 @@ if st.session_state.get('canslim_results'):
     st.session_state['canslim_adjusted_scores'] = {
         sym: score for sym, (score, _) in _adj_scores.items()
     }
+    # Per-quarter score history (oldest -> newest); latest period uses the
+    # manually adjusted score so it matches the ranked table.
+    _cs_hist = {}
+    for r in filtered_results:
+        _h = list(r.get('score_history') or [])
+        if _h:
+            _h[-1] = _adj_scores[r['symbol']][0]
+        _cs_hist[r['symbol']] = _h
+    st.session_state['canslim_score_history'] = _cs_hist
 
     # Sort by adjusted score descending for correct ranking
     _sorted_results = sorted(filtered_results,
@@ -434,6 +452,10 @@ if st.session_state.get('canslim_results'):
             'Total Score (/100)': f"{_ascore} ✏️" if _has_manual else _ascore,
             'Criteria Met':       f"{_amet} / 10",
             'Data Gaps':          r['data_gaps'],
+            'Score History (old → new)': " → ".join(
+                "—" if h is None else str(h)
+                for h in st.session_state['canslim_score_history'].get(sym, [])
+            ) or "—",
         })
         prev = _ascore
 

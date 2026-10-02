@@ -949,7 +949,7 @@ def _resolve_fmp_symbol(symbol, api_key):
     return symbol
 
 
-def fetch_canslim_data_fmp(symbol, api_key):
+def fetch_canslim_data_fmp(symbol, api_key, n_periods=4):
     """
     Fetch all CANSLIM data from FMP stable API (financialmodelingprep.com/stable).
     Resolves the canonical FMP symbol via search before fetching, so suffix
@@ -960,11 +960,13 @@ def fetch_canslim_data_fmp(symbol, api_key):
     """
     sym = _resolve_fmp_symbol(symbol.upper(), api_key)
     data = {'symbol': sym, 'errors': []}
+    # Each CANSLIM period needs 9 quarters (Q4 vs Q0 ROE); history periods add 1 each.
+    q_limit = max(12, int(n_periods) + 8)
 
     # ── Quarterly income statement (12 quarters) ─────────────────────────
     try:
         q_inc = _fmp_get("income-statement", api_key,
-                         {'symbol': sym, 'period': 'quarterly', 'limit': 12})
+                         {'symbol': sym, 'period': 'quarterly', 'limit': q_limit})
         if q_inc:
             data['q_eps']    = [d.get('epsDiluted') or d.get('eps') for d in q_inc]
             data['q_rev']    = [d.get('revenue')         for d in q_inc]
@@ -982,7 +984,7 @@ def fetch_canslim_data_fmp(symbol, api_key):
     # stable API has no bookValuePerShare field; compute from balance sheet
     try:
         q_bs = _fmp_get("balance-sheet-statement", api_key,
-                        {'symbol': sym, 'period': 'quarterly', 'limit': 12})
+                        {'symbol': sym, 'period': 'quarterly', 'limit': q_limit})
         sf   = _fmp_get("shares-float", api_key, {'symbol': sym})
         shares_out = float(sf[0]['outstandingShares']) if sf else None
 
@@ -1055,6 +1057,63 @@ def fetch_canslim_data_fmp(symbol, api_key):
 
 
 # ============================================================================
+# CANSLIM SCORE HISTORY (one score per quarterly period)
+# ============================================================================
+
+_Q_KEYS = ('q_eps', 'q_rev', 'q_pretax', 'q_ni', 'q_bvps', 'q_dates')
+_A_KEYS = ('a_eps', 'a_pretax', 'a_ni', 'a_dates')
+
+
+def _drop_head(series, k):
+    """Drop the k most-recent entries of a list or pandas Series."""
+    if series is None or k <= 0:
+        return series
+    if isinstance(series, pd.Series):
+        return series.iloc[k:]
+    return list(series)[k:]
+
+
+def _len(series):
+    return 0 if series is None else len(series)
+
+
+def compute_canslim_history(data, n_periods=4):
+    """
+    CANSLIM score for each of the last `n_periods` quarters, oldest -> newest.
+
+    Period k (k quarters back) re-scores the data as it stood at that quarter:
+    the k most-recent quarters are dropped, and annual statements dated after
+    that quarter are dropped too.  Institutional ownership is only available
+    as a current value, so it is held constant across periods.
+
+    A past period whose quarterly window is shorter than 9 quarters (needed
+    for the ROE YoY criterion) is None rather than a gap-penalised score.
+    """
+    n_q = _len(data.get('q_eps'))
+    q_dates = list(data.get('q_dates') or [])
+    a_dates = list(data.get('a_dates') or [])
+    history, dates = [], []
+    for k in range(int(n_periods)):
+        if k > 0 and n_q - k < 9:
+            history.append(None)
+            dates.append(q_dates[k] if k < len(q_dates) else None)
+            continue
+        shifted = dict(data)
+        for key in _Q_KEYS:
+            shifted[key] = _drop_head(data.get(key), k)
+        as_of = q_dates[k] if k < len(q_dates) else None
+        a_shift = sum(1 for d in a_dates if as_of and d and str(d) > str(as_of)) if k > 0 else 0
+        for key in _A_KEYS:
+            shifted[key] = _drop_head(data.get(key), a_shift)
+        try:
+            history.append(compute_canslim(shifted)['score'])
+        except Exception:
+            history.append(None)
+        dates.append(as_of)
+    return list(reversed(history)), list(reversed(dates))
+
+
+# ============================================================================
 # UNIVERSE SCORING
 # ============================================================================
 
@@ -1069,9 +1128,11 @@ def _normalize_ticker(sym, fmp_api_key=None):
     return sym
 
 
-def score_canslim_universe(symbols, fmp_api_key=None):
+def score_canslim_universe(symbols, fmp_api_key=None, n_periods=4):
     """
     Score a list of tickers. Pass fmp_api_key to use FMP instead of yfinance.
+    Each result also carries 'score_history' / 'history_dates' covering the
+    last `n_periods` quarters (oldest -> newest).
     Returns list of result dicts sorted by score descending.
     """
     results = []
@@ -1083,16 +1144,18 @@ def score_canslim_universe(symbols, fmp_api_key=None):
             time.sleep(0.5)   # brief pause between tickers to avoid yfinance rate limits
         try:
             if fmp_api_key:
-                raw = fetch_canslim_data_fmp(sym, fmp_api_key)
+                raw = fetch_canslim_data_fmp(sym, fmp_api_key, n_periods=n_periods)
             else:
                 raw = fetch_canslim_data(sym)
             scored = compute_canslim(raw)
+            scored['score_history'], scored['history_dates'] =                 compute_canslim_history(raw, n_periods)
         except Exception as e:
             scored = {
                 'symbol': sym, 'score': 0, 'criteria_met': 0,
                 'data_gaps': 10, 'errors': [str(e)],
                 'metrics': {}, 'score_details': [], 'q_dates': [], 'a_dates': [],
                 'eps_gr_series': [], 'rev_gr_series': [],
+                'score_history': [], 'history_dates': [],
                 'sector': '', 'industry': '',
             }
         results.append(scored)

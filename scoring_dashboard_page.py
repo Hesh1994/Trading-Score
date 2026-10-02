@@ -482,6 +482,16 @@ _selected_labels = st.sidebar.multiselect(
 )
 _canslim_enabled = _fmp_module_ok and (_CANSLIM_LABEL in _selected_labels)
 
+_accel_n = int(st.sidebar.number_input(
+    "Acceleration observations",
+    min_value=2, max_value=20, value=3, step=1, key="accel_n_obs",
+    help="A score cell turns green when its value rose continuously over the "
+         "last N observations (each one higher than the one before). "
+         "Technical: score if 2+ technical indicators are selected, otherwise "
+         "the single indicator's underlying value. Fear & Greed: index value. "
+         "Final: final score. CANSLIM: quarterly CANSLIM score.",
+))
+
 included_indicators = {}
 for ind_key in _all_ind_keys:
     enabled = indicator_config[ind_key]['label'] in _selected_labels
@@ -676,20 +686,59 @@ if _wl_update_clicked and _wl_name_sel:
     _set_last_used_name(_wl_name_sel)
     st.sidebar.success(f"Updated watchlist '{_wl_name_sel}' — loads automatically next visit.")
 
-def _final_score(ticker, scores, fg_scores, canslim_scores):
+def _combine_final(_ts, _fg, _cs):
     _ws, _wt = 0.0, 0.0
-    _ts = scores.get(ticker)
     if _ts is not None and _w_tech > 0:
         _ws += _ts * _w_tech;  _wt += _w_tech
-    if _fg_active and _w_fg > 0:
-        _fg = fg_scores.get(ticker)
-        if _fg is not None:
-            _ws += _fg * _w_fg;  _wt += _w_fg
-    if _canslim_enabled and _w_canslim > 0:
-        _cs = canslim_scores.get(ticker)
-        if _cs is not None:
-            _ws += _cs * _w_canslim;  _wt += _w_canslim
+    if _fg_active and _w_fg > 0 and _fg is not None:
+        _ws += _fg * _w_fg;  _wt += _w_fg
+    if _canslim_enabled and _w_canslim > 0 and _cs is not None:
+        _ws += _cs * _w_canslim;  _wt += _w_canslim
     return round(_ws / _wt, 1) if _wt > 0 else None
+
+
+def _final_score(ticker, scores, fg_scores, canslim_scores):
+    return _combine_final(scores.get(ticker), fg_scores.get(ticker),
+                          canslim_scores.get(ticker))
+
+
+# ── Acceleration filter helpers ──────────────────────────────────────────────
+def _underlying_value(ind_key, sig):
+    """Numeric value behind an indicator signal (used when only one technical
+    indicator is selected)."""
+    if not sig or 'error' in sig:
+        return None
+    if ind_key == 'sma':
+        _v = sig.get('short')
+    elif ind_key == 'stochastic':
+        _v = sig.get('k')
+    elif ind_key == 'aroon':
+        _v = sig.get('up')
+    elif ind_key == 'bollinger':
+        _u, _l = sig.get('upper'), sig.get('lower')
+        _v = (_u + _l) / 2 if _u is not None and _l is not None else None
+    elif ind_key == 'macd':
+        _v = sig.get('line')
+    elif ind_key == 'volume':
+        _v = sig.get('current_volume')
+    elif ind_key == 'week52_high':
+        _v = sig.get('high_52w')
+    else:
+        _v = sig.get('value')
+    try:
+        return None if _v is None else float(_v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_accelerating(values, n):
+    """True when the last n observations rise strictly at every step."""
+    if not values or len(values) < n:
+        return False
+    _last = list(values)[-n:]
+    if any(v is None for v in _last):
+        return False
+    return all(b > a for a, b in zip(_last, _last[1:]))
 
 # ── FMP price endpoint test ───────────────────────────────────────────────
 if fmp_key and _fmp_module_ok:
@@ -850,6 +899,60 @@ if st.session_state['ta_ticker_list']:
     _n_tts = 5 if (_show_5d    and _scores_history) else 0
     _n_fg  = 5 if (_show_5d_fg and _fg_history)    else 0
 
+    # ── Acceleration filter: continuous rise over the last N observations ──
+    _acc_tech_h = st.session_state.get('ta_accel_tech_hist', {})
+    _acc_fg_h   = st.session_state.get('ta_accel_fg_hist', {})
+    _acc_ind_h  = st.session_state.get('ta_accel_ind_hist', {})
+    _acc_keys   = st.session_state.get('ta_accel_tech_keys', [])
+    _acc_cs_h   = st.session_state.get('ta_canslim_history',
+                      st.session_state.get('canslim_score_history', {}))
+
+    def _tech_series(t):
+        if len(_acc_keys) == 1:   # single indicator → its underlying value
+            return (_acc_ind_h.get(t) or {}).get(_acc_keys[0])
+        return _acc_tech_h.get(t)
+
+    def _final_series(t):
+        _th = _acc_tech_h.get(t) or []
+        _fh = _acc_fg_h.get(t) or [None] * len(_th)
+        _cs = _canslim_scores.get(t)
+        return [_combine_final(a, b, _cs) for a, b in zip(_th, _fh)]
+
+    _accel = {
+        t: {
+            'tech':    _is_accelerating(_tech_series(t), _accel_n),
+            'fg':      _fg_active and _is_accelerating(_acc_fg_h.get(t), _accel_n),
+            'canslim': _canslim_enabled and _is_accelerating(_acc_cs_h.get(t), _accel_n),
+            'final':   _is_accelerating(_final_series(t), _accel_n),
+        }
+        for t in _visible_tickers
+    }
+    _ACC_ON  = 'background-color: #c8e6c9; color: #1b1b1b'
+    _ACC_OFF = 'background-color: #ffffff; color: #1b1b1b'
+
+    def _accel_styler(df, col_map):
+        """col_map: {dataframe column: accel key}. Rows follow _visible_tickers."""
+        _css = pd.DataFrame('', index=df.index, columns=df.columns)
+        for _col, _key in col_map.items():
+            if _col in df.columns:
+                _css[_col] = [_ACC_ON if _accel[t][_key] else _ACC_OFF
+                              for t in _visible_tickers]
+        return df.style.apply(lambda _d: _css, axis=None)
+
+    _hist_len = len(next(iter(_acc_tech_h.values()), []) or [])
+    if _acc_tech_h and _hist_len < _accel_n:
+        st.info(f"Acceleration needs {_accel_n} observations but the last run "
+                f"computed {_hist_len}. Run the analysis again to update the highlighting.")
+    _acc_basis = (f"{indicator_config.get(_acc_keys[0], {}).get('label', _acc_keys[0])} value"
+                  if len(_acc_keys) == 1 else "Technical Score")
+    _acc_cap = (f"🟩 Green = accelerating: continuous rise over the last {_accel_n} "
+                f"observations (Technical: {_acc_basis}")
+    if _fg_active:
+        _acc_cap += "; Fear & Greed: index value"
+    if _canslim_enabled:
+        _acc_cap += "; CANSLIM: quarterly score"
+    _acc_cap += "; Final: final score)."
+
     if _n_tts or _n_fg:
         # ── 5D active: MultiIndex DataFrame → native merged-header rendering ──────
         # Build column tuples: (group, sub-header)
@@ -904,7 +1007,15 @@ if st.session_state['ta_ticker_list']:
 
         _mi_df = pd.DataFrame(_mi_data)
         _mi_df.columns = pd.MultiIndex.from_tuples(_mi_tuples)
-        st.dataframe(_mi_df, use_container_width=True, hide_index=True)
+        _mi_map = {
+            (('Total Technical Score', _day_labels[-1]) if _n_tts else ('', 'Tech Score')): 'tech',
+            ('', 'CANSLIM'):     'canslim',
+            ('', 'Final Score'): 'final',
+        }
+        if _fg_active:
+            _mi_map[('Fear & Greed', _day_labels[-1]) if _n_fg else ('', 'Fear & Greed')] = 'fg'
+        st.dataframe(_accel_styler(_mi_df, _mi_map), use_container_width=True, hide_index=True)
+        st.caption(_acc_cap)
 
         st.caption(f"{len(_visible_tickers)} of {len(_tickers)} ticker(s) shown")
 
@@ -931,9 +1042,16 @@ if st.session_state['ta_ticker_list']:
             'Final Score':           st.column_config.NumberColumn('Final Score (%)', disabled=True, format='%.1f%%'),
         }
         _edited = st.data_editor(
-            pd.DataFrame(_tbl_data), use_container_width=True,
+            _accel_styler(pd.DataFrame(_tbl_data), {
+                'Total Technical Score': 'tech',
+                'Fear & Greed':          'fg',
+                'CANSLIM Score':         'canslim',
+                'Final Score':           'final',
+            }),
+            use_container_width=True,
             hide_index=True, column_config=_col_cfg, key='ta_ticker_table',
         )
+        st.caption(_acc_cap)
         _kept_visible = _edited[~_edited['Remove']]['Ticker'].tolist()
         _removed = set(_visible_tickers) - set(_kept_visible)
         if _removed:
@@ -1267,12 +1385,17 @@ if _run_btn_header:
 
             # 5-day score history (oldest → newest) for sparklines
             _fg_enabled = indicator_config.get('fear_greed', {}).get('enabled', False)
+            _n_hist = max(5, _accel_n)
+            _tech_keys = [k for k, v in indicator_config.items()
+                          if v.get('enabled') and k != 'fear_greed']
             _tech_history = {}
             _fg_history = {}
+            _accel_tech, _accel_fg, _accel_ind = {}, {}, {}
             for ticker in symbols_list:
                 _tech_days = []
                 _fg_days = []
-                for offset in range(4, -1, -1):
+                _ind_days = {k: [] for k in _tech_keys}
+                for offset in range(_n_hist - 1, -1, -1):
                     _trimmed = {
                         interval: {
                             t: (df.iloc[:-offset] if offset > 0 else df)
@@ -1290,11 +1413,21 @@ if _run_btn_header:
                         _fg_days.append(round(_r['signals']['fear_greed']['value'], 1))
                     else:
                         _fg_days.append(None)
-                _tech_history[ticker] = _tech_days
-                if any(v is not None for v in _fg_days):
-                    _fg_history[ticker] = _fg_days
+                    for _k in _tech_keys:
+                        _ind_days[_k].append(_underlying_value(_k, _r['signals'].get(_k)))
+                _accel_tech[ticker] = _tech_days
+                _accel_fg[ticker]   = _fg_days
+                _accel_ind[ticker]  = _ind_days
+                _tech_history[ticker] = _tech_days[-5:]
+                if any(v is not None for v in _fg_days[-5:]):
+                    _fg_history[ticker] = _fg_days[-5:]
             st.session_state['ta_scores_history'] = _tech_history
             st.session_state['ta_fg_history'] = _fg_history
+            # Full-length series for the acceleration filter
+            st.session_state['ta_accel_tech_hist'] = _accel_tech
+            st.session_state['ta_accel_fg_hist']   = _accel_fg
+            st.session_state['ta_accel_ind_hist']  = _accel_ind
+            st.session_state['ta_accel_tech_keys'] = _tech_keys
             # Store the actual trading dates for the last 5 bars
             _hist_dates = ['Day -4', 'Day -3', 'Day -2', 'Day -1', 'Today']
             for _iv_data in tickers_data_by_interval.values():
@@ -1322,8 +1455,11 @@ if _run_btn_header:
             st.session_state['ta_canslim_scores'] = {
                 sym: round(score, 2) for sym, score in _cs_adj.items()
             }
+            st.session_state['ta_canslim_history'] = dict(
+                st.session_state.get('canslim_score_history', {}))
         else:
             st.session_state['ta_canslim_scores'] = {}
+            st.session_state['ta_canslim_history'] = {}
             st.warning("⚠️ CANSLIM scores not loaded — please run the **CANSLIM Dashboard** first, then re-run analysis here.")
 
     # Save weights + final scores to session state for Portfolio page
