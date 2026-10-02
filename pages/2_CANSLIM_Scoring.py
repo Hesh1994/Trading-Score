@@ -352,11 +352,15 @@ if run_btn:
     if not symbols:
         st.warning("Enter at least one ticker symbol.")
         st.stop()
+    if not fmp_key:
+        st.error("❌ Enter your FMP API key on the Scoring Dashboard page. "
+                 "CANSLIM data comes only from FMP.")
+        st.stop()
 
     with st.spinner(f"Fetching fundamental data for {len(symbols)} ticker(s)…"):
         st.session_state['canslim_results'] = score_canslim_universe(
-            symbols, fmp_api_key=fmp_key or None, n_periods=int(canslim_periods))
-        st.session_state['canslim_source']  = "FMP API" if fmp_key else "yfinance"
+            symbols, fmp_api_key=fmp_key, n_periods=int(canslim_periods))
+        st.session_state['canslim_source']  = "FMP API"
     st.rerun()
 
 if st.session_state.get('canslim_results'):

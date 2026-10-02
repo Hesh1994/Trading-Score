@@ -254,7 +254,7 @@ if _missing and fmp_key:
     _end   = _dt.date.today()
     _start = _end - _dt.timedelta(days=int(_pm_lookback * 1.5))
     try:
-        from fmp_module import fetch_price_data_fmp
+        from canslim_module import fetch_price_data_fmp
         for _sym in _missing:
             with st.spinner(f"Fetching price data for {_sym}…"):
                 _df_m = fetch_price_data_fmp(

@@ -109,7 +109,6 @@
    - streamlit
    - pandas
    - numpy
-   - yfinance
    - plotly
    - beautifulsoup4
    - requests

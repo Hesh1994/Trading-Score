@@ -37,22 +37,23 @@ Streamlit will auto-create tabs in the UI.
 **Best for:** Backtesting, batch processing, custom scripts
 
 ```python
+import datetime as dt
 import pandas as pd
-import yfinance as yf
+from canslim_module import fetch_price_data_fmp
 from scoring_module import score_stock, score_universe, results_to_dataframe
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 
-# Single stock
-df = yf.download('AAPL', start='2024-01-01')
-df.columns = df.columns.str.lower()
-result = score_stock(df, 'AAPL', INDICATORS_CONFIG, GLOBAL_CONFIG)
+FMP_KEY = "your-fmp-api-key"
+end = dt.date.today()
+
+# Single stock (price data comes from the FMP API)
+df = fetch_price_data_fmp('AAPL', '2024-01-01', end, FMP_KEY, 'daily')
+result = score_stock('AAPL', {'daily': {'AAPL': df}}, INDICATORS_CONFIG, GLOBAL_CONFIG)
 print(f"AAPL: {result['signal']} (Buy: {result['buy_score']}, Sell: {result['sell_score']})")
 
 # Multiple stocks
 symbols = ['AAPL', 'MSFT', 'GOOGL']
-data = {s: yf.download(s, start='2024-01-01') for s in symbols}
-for k in data:
-    data[k].columns = data[k].columns.str.lower()
+data = {'daily': {s: fetch_price_data_fmp(s, '2024-01-01', end, FMP_KEY, 'daily') for s in symbols}}
 
 results = score_universe(data, INDICATORS_CONFIG, GLOBAL_CONFIG)
 df_results = results_to_dataframe(results)
@@ -158,7 +159,7 @@ Or in the UI: toggle in sidebar.
 
 ## Need Help?
 
-1. **Installation issues?** → Run `pip install --upgrade pandas-ta yfinance streamlit`
+1. **Installation issues?** → Run `pip install -r requirements.txt`
 2. **Pandas deprecated warnings?** → Already fixed (using `.bfill()`, `.ffill()`)
 3. **No results showing?** → Check your date range and ticker symbols
 4. **Want more indicators?** → See SCORING_SYSTEM.md for extension guide

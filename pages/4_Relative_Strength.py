@@ -272,8 +272,8 @@ if _use_cap:
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=3600)
-def _fetch(tickers, start, end, bar):
-    return rsm.fetch_ohlcv(tickers, start, end, bar)
+def _fetch(tickers, start, end, bar, api_key):
+    return rsm.fetch_ohlcv(tickers, start, end, bar, api_key=api_key)
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
@@ -287,9 +287,13 @@ if _run:
         if not tickers:
             st.error("Select or enter at least one ticker first.")
             st.stop()
+        if not _fmp_key:
+            st.error("❌ Enter your FMP API key on the Scoring Dashboard page. "
+                     "Price data comes only from FMP.")
+            st.stop()
 
         with st.spinner(f"Downloading {len(tickers)} ticker(s)…"):
-            stock_data = _fetch(list(tickers), start_date, end_date, bar_interval)
+            stock_data = _fetch(list(tickers), start_date, end_date, bar_interval, _fmp_key)
         if not stock_data:
             st.error("No data returned for the selected ticker(s) in that date range.")
             st.stop()
@@ -302,7 +306,7 @@ if _run:
                      "sidebar to add some (Load Tickers, then Add Selected / Add All).")
             st.stop()
         with st.spinner(f"Downloading {len(bench_members)} benchmark constituents…"):
-            members = _fetch(list(bench_members), start_date, end_date, bar_interval)
+            members = _fetch(list(bench_members), start_date, end_date, bar_interval, _fmp_key)
         if not members:
             st.error("No constituent data returned for the benchmark.")
             st.stop()

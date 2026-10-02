@@ -6,7 +6,6 @@ Add this to your main trading_dashboard.py or create as a separate page in a mul
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
 import datetime as dt
 import requests
 import io
@@ -1203,8 +1202,13 @@ symbols_list = list(dict.fromkeys(st.session_state['ta_ticker_list']))
 
 if _run_btn_header:
 
-    _use_fmp = bool(fmp_key and _fmp_module_ok)
-    _source_label = "FMP API" if _use_fmp else "yfinance"
+    if not _fmp_module_ok:
+        _status_ph.error("❌ canslim_module could not be loaded, so FMP price data is unavailable.")
+        st.stop()
+    if not fmp_key:
+        _status_ph.error("❌ Enter your FMP API key in the sidebar. All price data comes from FMP.")
+        st.stop()
+    _source_label = "FMP API"
 
     _status_ph.info(f"⏳ Downloading price data via {_source_label}…")
     with st.spinner(f"📥 Downloading price data via {_source_label}…"):
@@ -1217,56 +1221,20 @@ if _run_btn_header:
 
             tickers_data_by_interval = {}
 
-            if _use_fmp:
-                # ── FMP path: one call per symbol per interval ────────────
-                for interval in intervals_needed:
-                    tickers_dict = {}
-                    _prog = st.progress(0, text=f"Fetching {interval} prices via FMP…")
-                    for _i, sym in enumerate(symbols_list):
-                        df = fetch_price_data_fmp(sym, start_date, end_date,
-                                                  fmp_key, interval)
-                        if df is not None and not df.empty:
-                            tickers_dict[sym] = df
-                        _prog.progress((_i + 1) / len(symbols_list),
-                                       text=f"FMP {interval}: {_i+1}/{len(symbols_list)} — {sym}")
-                    _prog.empty()
-                    if tickers_dict:
-                        tickers_data_by_interval[interval] = tickers_dict
-
-            else:
-                # ── yfinance path (fallback) ──────────────────────────────
-                INTERVAL_YF = {'daily': '1d', 'weekly': '1wk', 'monthly': '1mo'}
-                for interval in intervals_needed:
-                    df_raw = yf.download(
-                        tickers=symbols_list,
-                        start=start_date,
-                        end=end_date,
-                        interval=INTERVAL_YF[interval],
-                        progress=False,
-                        auto_adjust=False
-                    )
-                    if df_raw.empty:
-                        continue
-                    tickers_dict = {}
-                    if len(symbols_list) == 1:
-                        ticker = symbols_list[0]
-                        ticker_df = df_raw.copy()
-                        ticker_df.columns = ticker_df.columns.str.lower()
-                        ticker_df = ticker_df.dropna(subset=['close'])
-                        if len(ticker_df) > 0:
-                            tickers_dict[ticker] = ticker_df
-                    else:
-                        for ticker in symbols_list:
-                            try:
-                                ticker_df = df_raw.xs(ticker, level=1, axis=1).copy()
-                                ticker_df.columns = ticker_df.columns.str.lower()
-                                ticker_df = ticker_df.dropna(subset=['close'])
-                                if len(ticker_df) > 0:
-                                    tickers_dict[ticker] = ticker_df
-                            except (KeyError, TypeError):
-                                continue
-                    if tickers_dict:
-                        tickers_data_by_interval[interval] = tickers_dict
+            # ── FMP path: one call per symbol per interval ────────────
+            for interval in intervals_needed:
+                tickers_dict = {}
+                _prog = st.progress(0, text=f"Fetching {interval} prices via FMP…")
+                for _i, sym in enumerate(symbols_list):
+                    df = fetch_price_data_fmp(sym, start_date, end_date,
+                                              fmp_key, interval)
+                    if df is not None and not df.empty:
+                        tickers_dict[sym] = df
+                    _prog.progress((_i + 1) / len(symbols_list),
+                                   text=f"FMP {interval}: {_i+1}/{len(symbols_list)} — {sym}")
+                _prog.empty()
+                if tickers_dict:
+                    tickers_data_by_interval[interval] = tickers_dict
 
             if not tickers_data_by_interval:
                 st.error(f"No price data returned via {_source_label}. Check symbols and date range.")

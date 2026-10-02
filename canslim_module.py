@@ -1,11 +1,10 @@
 """
 CANSLIM Scoring Module
-Fetches fundamental data via yfinance and scores each ticker on the
+Fetches fundamental data via the FMP API and scores each ticker on the
 10-criterion CANSLIM methodology (maximum 100 points).
 """
 
 import time
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import requests
@@ -101,7 +100,7 @@ COUNTRY_EXCHANGES = {
     "Kenya":            [("NSE_KE",   "Nairobi Securities Exchange (NSE)")],
 }
 
-# Exchange code → ticker suffix for FMP / yfinance
+# Exchange code → ticker suffix for FMP
 EXCHANGE_SUFFIX = {
     # Americas
     "NASDAQ":   "", "NYSE":  "", "AMEX":  "", "OTC":  "",
@@ -214,16 +213,6 @@ def safe_growth(current, prior):
     return (c - p) / abs(p)
 
 
-def _get_row(df, candidates):
-    """Return the first row from df whose index label matches any candidate name."""
-    if df is None or df.empty:
-        return None
-    for name in candidates:
-        if name in df.index:
-            return df.loc[name]
-    return None
-
-
 def _v(series, idx):
     """Value at position idx (0 = most-recent). Handles pandas Series and plain lists."""
     if series is None:
@@ -244,116 +233,6 @@ def _v(series, idx):
 # ============================================================================
 # DATA FETCHING
 # ============================================================================
-
-def fetch_canslim_data(symbol):
-    """
-    Fetch all raw data needed for CANSLIM scoring.
-    Columns in all returned series are most-recent first (index 0 = latest quarter/year).
-    """
-    t = yf.Ticker(symbol)
-    data = {'symbol': symbol.upper(), 'errors': []}
-
-    # ── Quarterly income statement ───────────────────────────────────────
-    try:
-        qi = t.quarterly_income_stmt
-        if qi is None or qi.empty:
-            qi = t.quarterly_financials          # older yfinance attribute name
-        if qi is not None and not qi.empty:
-            data['q_eps']    = _get_row(qi, ['Diluted EPS', 'Basic EPS'])
-            data['q_rev']    = _get_row(qi, ['Total Revenue', 'Revenue'])
-            data['q_pretax'] = _get_row(qi, ['Pretax Income', 'Income Before Tax', 'EBIT'])
-            data['q_ni']     = _get_row(qi, ['Net Income', 'Net Income Common Stockholders',
-                                              'Net Income Including Noncontrolling Interests'])
-            data['q_dates']  = [str(c.date()) for c in qi.columns]
-        else:
-            data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
-            data['errors'].append('quarterly income statement unavailable')
-    except Exception as e:
-        data.update(q_eps=None, q_rev=None, q_pretax=None, q_ni=None, q_dates=[])
-        data['errors'].append(f'quarterly income: {e}')
-
-    # ── Quarterly balance sheet (for BVPS) ───────────────────────────────
-    try:
-        qb = t.quarterly_balance_sheet
-        if qb is None or qb.empty:
-            qb = t.quarterly_sheet
-        if qb is not None and not qb.empty:
-            equity = _get_row(qb, ['Stockholders Equity', 'Total Stockholders Equity',
-                                    'Common Stock Equity', 'Total Equity Gross Minority Interest'])
-            shares = _get_row(qb, ['Ordinary Shares Number', 'Share Issued',
-                                    'Common Stock', 'Shares Outstanding'])
-            if equity is not None and shares is not None:
-                data['q_bvps'] = equity / shares.replace(0, np.nan)
-            elif equity is not None:
-                so = (t.info or {}).get('sharesOutstanding') or (t.info or {}).get('impliedSharesOutstanding')
-                if so:
-                    data['q_bvps'] = equity / float(so)
-                else:
-                    data['q_bvps'] = None
-                    data['errors'].append('shares outstanding unavailable for BVPS')
-            else:
-                data['q_bvps'] = None
-                data['errors'].append('stockholders equity unavailable')
-        else:
-            data['q_bvps'] = None
-            data['errors'].append('quarterly balance sheet unavailable')
-    except Exception as e:
-        data['q_bvps'] = None
-        data['errors'].append(f'quarterly balance sheet: {e}')
-
-    # ── Annual income statement ───────────────────────────────────────────
-    try:
-        ai = t.income_stmt
-        if ai is None or ai.empty:
-            ai = t.financials
-        if ai is not None and not ai.empty:
-            data['a_eps']    = _get_row(ai, ['Diluted EPS', 'Basic EPS'])
-            data['a_pretax'] = _get_row(ai, ['Pretax Income', 'Income Before Tax', 'EBIT'])
-            data['a_ni']     = _get_row(ai, ['Net Income', 'Net Income Common Stockholders',
-                                              'Net Income Including Noncontrolling Interests'])
-            data['a_dates']  = [str(c.date()) for c in ai.columns]
-        else:
-            data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
-            data['errors'].append('annual income statement unavailable')
-    except Exception as e:
-        data.update(a_eps=None, a_pretax=None, a_ni=None, a_dates=[])
-        data['errors'].append(f'annual income: {e}')
-
-    # ── Institutional ownership ───────────────────────────────────────────
-    try:
-        _inst_info = None
-        for _attempt in range(3):
-            try:
-                _inst_info = t.info or {}
-                break
-            except Exception as _e:
-                if 'Too Many Requests' in str(_e) or '429' in str(_e):
-                    time.sleep(3 * (2 ** _attempt))   # 3 s, 6 s, 12 s
-                else:
-                    raise
-        if _inst_info is None:
-            raise RuntimeError('rate-limited after 3 retries')
-        pct = _inst_info.get('institutionPercentHeld') or _inst_info.get('heldPercentInstitutions')
-        if pct is not None:
-            pct = float(pct)
-            data['inst_pct'] = pct / 100 if pct > 1 else pct
-        else:
-            data['inst_pct'] = None
-            data['errors'].append('institutional ownership unavailable')
-    except Exception as e:
-        data['inst_pct'] = None
-        data['errors'].append(f'institutional ownership: {e}')
-
-    # ── Sector / industry ────────────────────────────────────────────────
-    try:
-        info = t.info or {}
-        data['sector']   = info.get('sector')   or ''
-        data['industry'] = info.get('industry') or ''
-    except Exception:
-        data['sector'] = data['industry'] = ''
-
-    return data
-
 
 # ============================================================================
 # CANSLIM COMPUTATION
@@ -955,8 +834,8 @@ def fetch_canslim_data_fmp(symbol, api_key, n_periods=4):
     Resolves the canonical FMP symbol via search before fetching, so suffix
     mismatches (e.g. ABUK.CA vs ABUK) are corrected automatically.
     BVPS = totalStockholdersEquity / outstandingShares (shares-float endpoint).
-    Institutional ownership via yfinance (no FMP stable endpoint available).
-    Returns data in the same format as fetch_canslim_data() (most-recent first).
+    Institutional ownership via the FMP institutional-ownership endpoint.
+    All series are most-recent first (index 0 = latest quarter/year).
     """
     sym = _resolve_fmp_symbol(symbol.upper(), api_key)
     data = {'symbol': sym, 'errors': []}
@@ -1130,7 +1009,7 @@ def _normalize_ticker(sym, fmp_api_key=None):
 
 def score_canslim_universe(symbols, fmp_api_key=None, n_periods=4):
     """
-    Score a list of tickers. Pass fmp_api_key to use FMP instead of yfinance.
+    Score a list of tickers using the FMP API (fmp_api_key is required).
     Each result also carries 'score_history' / 'history_dates' covering the
     last `n_periods` quarters (oldest -> newest).
     Returns list of result dicts sorted by score descending.
@@ -1141,12 +1020,11 @@ def score_canslim_universe(symbols, fmp_api_key=None, n_periods=4):
         if not sym:
             continue
         if i > 0:
-            time.sleep(0.5)   # brief pause between tickers to avoid yfinance rate limits
+            time.sleep(0.5)   # brief pause between tickers to avoid FMP rate limits
         try:
-            if fmp_api_key:
-                raw = fetch_canslim_data_fmp(sym, fmp_api_key, n_periods=n_periods)
-            else:
-                raw = fetch_canslim_data(sym)
+            if not fmp_api_key:
+                raise ValueError('FMP API key is required')
+            raw = fetch_canslim_data_fmp(sym, fmp_api_key, n_periods=n_periods)
             scored = compute_canslim(raw)
             scored['score_history'], scored['history_dates'] =                 compute_canslim_history(raw, n_periods)
         except Exception as e:

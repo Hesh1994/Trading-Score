@@ -320,39 +320,43 @@ def format_rs_table(table, float_fmt='{:,.0f}', rs_fmt='{:.6f}'):
     return out
 
 
-# ----------------------------------------------------------------- yfinance
+# ---------------------------------------------------------------------- FMP
 
-def fetch_ohlcv(tickers, start, end, interval='1d', auto_adjust=False):
-    """
-    Download OHLCV via yfinance. Returns {ticker: DataFrame}.
-    auto_adjust=False keeps raw closes, so Close x Volume is actual turnover.
-    """
-    import yfinance as yf
+_FMP_INTERVAL = {'1d': 'daily', '1wk': 'weekly', '1mo': 'monthly',
+                 'daily': 'daily', 'weekly': 'weekly', 'monthly': 'monthly'}
 
+
+def fetch_ohlcv(tickers, start, end, interval='1d', api_key=None):
+    """
+    Download OHLCV via the FMP API. Returns {ticker: DataFrame} with
+    Open/High/Low/Close/Volume columns. FMP closes are unadjusted, so
+    Close x Volume is actual turnover.
+    """
+    from canslim_module import fetch_price_data_fmp
+
+    if not api_key:
+        raise ValueError('FMP API key is required')
     if isinstance(tickers, str):
         tickers = [tickers]
-
-    raw = yf.download(tickers, start=start, end=end, interval=interval,
-                      auto_adjust=auto_adjust, progress=False,
-                      group_by='ticker', threads=True)
+    fmp_interval = _FMP_INTERVAL.get(interval, 'daily')
 
     data = {}
-    if isinstance(raw.columns, pd.MultiIndex):
-        for ticker in tickers:
-            if ticker in raw.columns.get_level_values(0):
-                df = raw[ticker].dropna(how='all')
-                if not df.empty:
-                    data[ticker] = df
-    elif not raw.empty:
-        data[tickers[0]] = raw.dropna(how='all')
-
+    for ticker in tickers:
+        df = fetch_price_data_fmp(ticker, start, end, api_key, fmp_interval)
+        if df is None or df.empty:
+            continue
+        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low',
+                                'close': 'Close', 'adjclose': 'Adj Close',
+                                'volume': 'Volume'})
+        data[ticker] = df.dropna(how='all')
     return data
 
 
-def compute_rs_from_yfinance(ticker, start, end, benchmark_proxy=None,
-                             benchmark_constituents=None, benchmark_name=None,
-                             interval=None, bar_interval='1d',
-                             stock_market_cap=None, benchmark_market_cap=None):
+def compute_rs_from_fmp(ticker, start, end, benchmark_proxy=None,
+                        benchmark_constituents=None, benchmark_name=None,
+                        interval=None, bar_interval='1d',
+                        stock_market_cap=None, benchmark_market_cap=None,
+                        api_key=None):
     """
     End-to-end: download, build benchmark turnover, return (table, summary).
 
@@ -362,18 +366,18 @@ def compute_rs_from_yfinance(ticker, start, end, benchmark_proxy=None,
     if (benchmark_proxy is None) == (benchmark_constituents is None):
         raise ValueError('pass exactly one of benchmark_proxy or benchmark_constituents')
 
-    stock_data = fetch_ohlcv(ticker, start, end, bar_interval)
+    stock_data = fetch_ohlcv(ticker, start, end, bar_interval, api_key)
     if ticker not in stock_data:
         raise ValueError('no data returned for %s' % ticker)
 
     if benchmark_proxy is not None:
-        proxy_data = fetch_ohlcv(benchmark_proxy, start, end, bar_interval)
+        proxy_data = fetch_ohlcv(benchmark_proxy, start, end, bar_interval, api_key)
         if benchmark_proxy not in proxy_data:
             raise ValueError('no data returned for benchmark %s' % benchmark_proxy)
         bench_value = benchmark_trading_value_from_proxy(proxy_data[benchmark_proxy])
         name = benchmark_name or benchmark_proxy
     else:
-        members = fetch_ohlcv(list(benchmark_constituents), start, end, bar_interval)
+        members = fetch_ohlcv(list(benchmark_constituents), start, end, bar_interval, api_key)
         bench_value = benchmark_trading_value_from_constituents(members, min_coverage=0.5)
         name = benchmark_name or 'Benchmark'
 
@@ -401,6 +405,8 @@ def _main():
     p.add_argument('--stock-market-cap', type=float)
     p.add_argument('--benchmark-market-cap', type=float)
     p.add_argument('--csv', help='write the table to this path')
+    p.add_argument('--fmp-key', default=os.environ.get('FMP_API_KEY'),
+                   help='FMP API key (defaults to the FMP_API_KEY environment variable)')
     args = p.parse_args()
 
     members = None
@@ -411,7 +417,7 @@ def _main():
         else:
             members = [t.strip() for t in args.benchmark_constituents.split(',') if t.strip()]
 
-    table, summary = compute_rs_from_yfinance(
+    table, summary = compute_rs_from_fmp(
         args.ticker, args.start, args.end,
         benchmark_proxy=args.benchmark_proxy,
         benchmark_constituents=members,
@@ -420,6 +426,7 @@ def _main():
         bar_interval=args.bar_interval,
         stock_market_cap=args.stock_market_cap,
         benchmark_market_cap=args.benchmark_market_cap,
+        api_key=args.fmp_key,
     )
 
     print(format_rs_table(table).to_string(index=False))

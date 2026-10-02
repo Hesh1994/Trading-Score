@@ -1,6 +1,6 @@
 # Technical Analysis Stock Scoring System
 
-A **modular, configurable scoring system** for stock screening using technical indicators. Built on Streamlit, yfinance, and pandas-ta.
+A **modular, configurable scoring system** for stock screening using technical indicators. Built on Streamlit and pandas, with all market data from the FMP API.
 
 ## 📋 Overview
 
@@ -234,16 +234,15 @@ pages/
 ### Test a Single Stock
 ```python
 import pandas as pd
-import yfinance as yf
+from canslim_module import fetch_price_data_fmp
 from scoring_module import score_stock
 from scoring_config import INDICATORS_CONFIG, GLOBAL_CONFIG
 
-# Download data
-df = yf.download('AAPL', start='2024-01-01', end='2024-12-31')
-df.columns = df.columns.str.lower()
+# Download data from the FMP API
+df = fetch_price_data_fmp('AAPL', '2024-01-01', '2024-12-31', 'your-fmp-api-key', 'daily')
 
 # Score
-result = score_stock(df, 'AAPL', INDICATORS_CONFIG, GLOBAL_CONFIG)
+result = score_stock('AAPL', {'daily': {'AAPL': df}}, INDICATORS_CONFIG, GLOBAL_CONFIG)
 print(result)
 ```
 
@@ -315,7 +314,7 @@ pip install pandas-ta
 ### "No data downloaded"
 - Check ticker symbols are correct
 - Verify date range is valid
-- Ensure yfinance can reach Yahoo Finance
+- Check that your FMP API key is entered and valid
 
 ### "All NA values" for an indicator
 - Data may be too short for the indicator period
@@ -330,7 +329,7 @@ pip install pandas-ta
 ## 📚 Resources
 
 - **pandas-ta**: https://github.com/twopirllc/pandas-ta
-- **yfinance**: https://github.com/ranaroussi/yfinance
+- **FMP API**: https://site.financialmodelingprep.com/developer/docs
 - **Streamlit**: https://streamlit.io/
 - **Technical Analysis Concepts**: https://en.wikipedia.org/wiki/Technical_analysis
 

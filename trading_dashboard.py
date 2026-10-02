@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import datetime as dt
-import yfinance as yf
+import os
+import json
+from canslim_module import fetch_price_data_fmp
 import warnings
 from typing import Optional
 import plotly.express as px
@@ -598,6 +600,39 @@ with col2:
         max_value=dt.date.today()
     )
 
+# FMP API key — all price data comes from FMP (shared with the other pages)
+_KEY_FILE = os.path.join(os.path.expanduser("~"), ".streamlit_fmp_key")
+if not st.session_state.get('fmp_key_value'):
+    try:
+        if os.path.exists(_KEY_FILE):
+            with open(_KEY_FILE) as _kf:
+                st.session_state['fmp_key_value'] = json.load(_kf).get('key', '')
+    except Exception:
+        pass
+st.sidebar.subheader("🔑 FMP API Key")
+fmp_key = st.sidebar.text_input(
+    "FMP API Key", type="password",
+    value=st.session_state.get('fmp_key_value', ''),
+    key="td_fmp_key",
+)
+if fmp_key:
+    st.session_state['fmp_key_value'] = fmp_key
+
+
+def _fmp_stacked(symbols, start, end, api_key, interval):
+    """Long-format OHLCV (index: date, ticker) from FMP, matching the
+    lowercase column names the indicator functions expect."""
+    frames = {}
+    for sym in symbols:
+        _d = fetch_price_data_fmp(sym, start, end, api_key, interval)
+        if _d is not None and not _d.empty:
+            frames[sym] = _d.rename(columns={'adjclose': 'adj close'})
+    if not frames:
+        return pd.DataFrame()
+    _out = pd.concat(frames, names=['ticker', 'date'])
+    return _out.swaplevel(0, 1).sort_index()
+
+
 # Symbol Selection
 st.sidebar.subheader("🎯 Symbols")
 symbol_option = st.sidebar.selectbox(
@@ -762,15 +797,11 @@ if st.button("🚀 Run Analysis", type="primary"):
     
     with st.spinner("📥 Downloading data..."):
         try:
+            if not fmp_key:
+                st.error("Enter your FMP API key in the sidebar. All price data comes from FMP.")
+                st.stop()
             # Download daily data
-            df = yf.download(
-                tickers=symbols_list,
-                start=start_date,
-                end=end_date,
-                interval='1d',
-                auto_adjust=False,
-                progress=False
-            ).stack()
+            df = _fmp_stacked(symbols_list, start_date, end_date, fmp_key, 'daily')
             
             # Validate downloaded data
             if df.empty:
@@ -785,14 +816,7 @@ if st.button("🚀 Run Analysis", type="primary"):
             
             # Download weekly data if needed
             if use_weekly_analysis:
-                dfw = yf.download(
-                    tickers=symbols_list,
-                    start=start_date,
-                    end=end_date,
-                    interval='1wk',
-                    auto_adjust=False,
-                    progress=False
-                ).stack()
+                dfw = _fmp_stacked(symbols_list, start_date, end_date, fmp_key, 'weekly')
                 dfw.index.names = ['date', 'ticker']
                 dfw.columns = dfw.columns.str.lower()
                 dfw = dfw.dropna(how='all')
